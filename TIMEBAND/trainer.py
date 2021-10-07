@@ -41,6 +41,7 @@ class TIMEBANDTrainer:
         self.reals = None
         self.preds = None
         self.answer = None
+        self.predictions = None
         self.future_data = None
 
         self.true_data = None
@@ -92,6 +93,10 @@ class TIMEBANDTrainer:
         valid_score_plot = []
         EPOCHS = self.base_epochs + self.iter_epochs
         for epoch in range(self.base_epochs, EPOCHS):
+            self.preds = None
+            self.data = None
+            self.answer = None
+
             # Dashboard
             self.dashboard.init_figure()
 
@@ -125,10 +130,8 @@ class TIMEBANDTrainer:
         def generate(x):
             # FIXME
             # 현재 Obeserved Len은 forecast Len보다 크거나 같아야함.
-            return self.netG(x)[:, : self.dataset.forecast_len, :].to(self.device)
-
-        self.data = None
-        self.answer = None
+            fake_y = self.netG(x)[:, : self.dataset.forecast_len]
+            return fake_y.to(self.device)
 
         losses = init_loss()
         TAG = "Train" if training else "Valid"
@@ -138,20 +141,22 @@ class TIMEBANDTrainer:
             # #######################
             if training:
                 for _ in range(self.iter_critic):
+                    # Data Load
                     true_x, true_y = self.dataset.get_random()
                     fake_y = generate(true_x)
 
-                    Dx = discriminate(true_y)
-                    Dy = discriminate(fake_y)
+                    # Optimizer initialize
                     self.optimD.zero_grad()
 
-                    errD = self.metric.GANloss(Dx, target_is_real=True)
-                    errD.backward(retain_graph=True)
-                    loss_GP = self.metric.grad_penalty(fake_y, true_y)
-                    loss_D_ = Dy.mean() - Dx.mean()
+                    Dx = discriminate(true_y)
+                    Dy = discriminate(fake_y)
 
-                    loss_D = loss_D_ + loss_GP
-                    loss_D.backward(retain_graph=True)
+                    errD_real = self.metric.GANloss(Dx, target_is_real=True)
+                    errD_fake = self.metric.GANloss(Dy, target_is_real=False)
+                    errGP = self.metric.grad_penalty(fake_y, true_y)
+
+                    errD = errD_real + errD_fake + errGP
+                    errD.backward(retain_graph=True)
                     self.optimD.step()
 
             # Data
@@ -159,6 +164,8 @@ class TIMEBANDTrainer:
             true_y = data["decoded"].to(self.device)
             real_x = data["observed"]
             real_y = data["forecast"]
+            fake_y = generate(true_x)
+            
             batchs = true_y.shape[0]
 
             # Optimizer initialize
@@ -169,29 +176,33 @@ class TIMEBANDTrainer:
             # Discriminator Training
             # #######################
             Dx = discriminate(true_y)
-            errD_real = self.metric.GANloss(Dx, target_is_real=True)
-
-            fake_y = generate(true_x)
-
             Dy = discriminate(fake_y)
+
+            errD_real = self.metric.GANloss(Dx, target_is_real=True)
             errD_fake = self.metric.GANloss(Dy, target_is_real=False)
+
             losses["D"] = errD_real + errD_fake
 
             if training:
-                errD_real.backward(retain_graph=True)
-                errD_fake.backward(retain_graph=True)
+                errD = errD_real + errD_fake
+                errD.backward(retain_graph=True)
                 self.optimD.step()
 
             # #######################
             # Generator Trainining
             # #######################
             Dy = self.netD(fake_y)
-            losses["G"] = self.metric.GANloss(Dy, target_is_real=False)
-            losses["l1"] = self.metric.l1loss(true_y, fake_y)
-            losses["l2"] = self.metric.l2loss(true_y, fake_y)
-            losses["GP"] = self.metric.grad_penalty(true_y, fake_y)
-            errG = losses["G"] + losses["l1"] + losses["l2"] + losses["GP"]
+            errG_ = self.metric.GANloss(Dy, target_is_real=False)
+            errl1 = self.metric.l1loss(fake_y, true_y)
+            errl2 = self.metric.l2loss(fake_y, true_y)
+            errGP = self.metric.grad_penalty(fake_y, true_y)
+            errG = errG_ + errl1 + errl2 + errGP
 
+            losses["G"] += errG_
+            losses["l1"] += errl1
+            losses["l2"] += errl2
+            losses["GP"] += errGP
+            
             if training:
                 errG.backward(retain_graph=True)
                 self.optimG.step()
@@ -200,20 +211,14 @@ class TIMEBANDTrainer:
             # Scoring
             # #######################
             pred_y = self.dataset.denormalize(fake_y.cpu())
-            losses["Score"] = self.metric.NMAE(pred_y, real_y).detach().numpy()
+            losses["Score"] += self.metric.NMAE(pred_y, real_y).detach().numpy()
 
-            # true_x = data["encoded"].to(self.device)
-            # true_y = data["decoded"].to(self.device)
-            # real_x = data["observed"]
-            # real_y = data["forecast"]
             self.concat(real_x, pred_y)
+            # self.result(real_y, training)
 
-            #     self.predict(pred_y)
-
-
-            #     # Losses Log
+            # Losses Log
             tqdm.set_description(loss_info(TAG, epoch, losses, i))
-            #     self.data_process(real_x)
+            # self.data_process(real_x)
             self.dashboard.visualize(batchs, self.reals, self.preds)
 
         # self.result(real_y, training)
@@ -230,43 +235,40 @@ class TIMEBANDTrainer:
             self.true_data = np.concatenate([self.true_data, real[b, -1:, :]])
 
     def concat(self, real_x: Tensor, pred_y: Tensor):
+        batch_size = pred_y.shape[0]
+        future_len = pred_y.shape[1]
+        target_dim = pred_y.shape[2]
+
         if self.preds is None:
-            self.reals = torch.zeros(real_x.shape)
-            self.preds = torch.zeros(pred_y.shape)
+            observe_len = real_x.shape[1]
+            origin_dim = real_x.shape[2]
+
+            self.index = 0
+            self.reals = torch.zeros((future_len, observe_len, origin_dim))
+            self.preds = torch.zeros((future_len, future_len, target_dim))
+            self.answer = torch.zeros((future_len - 1, future_len, target_dim))
+            self.predictions = torch.zeros((future_len - 1, target_dim))
+
+        zeros_3 = torch.zeros((batch_size, future_len, target_dim))
+        zeros_2 = torch.zeros((batch_size, target_dim))
 
         self.reals = torch.cat([self.reals, real_x])
         self.preds = torch.cat([self.preds, pred_y])
+        
+        self.answer = torch.cat([self.answer, zeros_3])
+        self.predictions = torch.cat([self.predictions, zeros_2])
 
-    def predict(self, pred):
-        batch_size = pred.shape[0]
-        future_size = pred.shape[1]
-        feature_dim = pred.shape[2]
+        for f in range(future_len):
+            idx_s = self.index + f
+            self.answer[idx_s:idx_s + batch_size, f] = self.preds[-batch_size:, f]
 
-        pred = pred.reshape((-1, future_size, feature_dim))
-
-        preds = np.concatenate(
-            [
-                self.data["pred"][-batch_size - future_size :].detach().numpy(),
-                np.zeros((batch_size, future_size, feature_dim)),
-            ]
-        )
-
-        if self.answer is None:
-            self.answer = np.zeros(
-                (batch_size + future_size - 1, future_size, feature_dim)
-            )
-            self.index = 0
-        else:
-            self.answer = np.concatenate(
-                [self.answer, np.zeros((batch_size, future_size, feature_dim))],
-            )
-
-        for f in range(future_size):
-            self.answer[self.index + f : self.index + f + batch_size, f] = preds[
-                batch_size : 2 * batch_size, f
-            ]
+        sub_answer = self.answer[-batch_size - future_len:]
+        mask = (sub_answer != 0)
+        mean = (sub_answer * mask).sum(dim=1)/mask.sum(dim=1)
+        self.predictions[-batch_size - future_len:] = mean
 
         self.index += batch_size
+
 
     def result(self, y_pred, training=False):
         #### Result
@@ -283,58 +285,26 @@ class TIMEBANDTrainer:
 
             mean = torch.tensor(predict_mean)
             median = torch.tensor(predict_median)
-            week1 = torch.tensor(data[:, 6:7])
-            week2 = torch.tensor(data[:, 13:14])
-            week4 = torch.tensor(data[:, 27:28])
 
             target = torch.where(true != 0)
             mean[target] = (true[target] - mean[target]) / true[target]
             median[target] = (true[target] - median[target]) / true[target]
-            week1[target] = (true[target] - week1[target]) / true[target]
-            week2[target] = (true[target] - week2[target]) / true[target]
-            week4[target] = (true[target] - week4[target]) / true[target]
 
             target = torch.where(true == 0)
             mean[target] = 0
             median[target] = 0
-            week1[target] = 0
-            week1[target] = 0
-            week2[target] = 0
-            week4[target] = 0
 
             mean_score = torch.sum(torch.abs(mean)) / torch.count_nonzero(true)
             median_score = torch.sum(torch.abs(median)) / torch.count_nonzero(true)
-            week1_score = torch.sum(
-                torch.abs(week1[~torch.any(week1.isnan(), dim=1)])
-            ) / torch.count_nonzero(true[~torch.any(week1.isnan(), dim=1)])
-            week2_score = torch.sum(
-                torch.abs(week2[~torch.any(week2.isnan(), dim=1)])
-            ) / torch.count_nonzero(true[~torch.any(week2.isnan(), dim=1)])
-            week4_score = torch.sum(
-                torch.abs(week4[~torch.any(week4.isnan(), dim=1)])
-            ) / torch.count_nonzero(true[~torch.any(week4.isnan(), dim=1)])
 
             _mean_score = torch.sum(mean) / torch.count_nonzero(true)
             _median_score = torch.sum(median) / torch.count_nonzero(true)
-            _week1_score = torch.sum(
-                week1[~torch.any(week1.isnan(), dim=1)]
-            ) / torch.count_nonzero(true[~torch.any(week1.isnan(), dim=1)])
-            _week2_score = torch.sum(
-                week2[~torch.any(week2.isnan(), dim=1)]
-            ) / torch.count_nonzero(true[~torch.any(week2.isnan(), dim=1)])
-            _week4_score = torch.sum(
-                week4[~torch.any(week4.isnan(), dim=1)]
-            ) / torch.count_nonzero(true[~torch.any(week4.isnan(), dim=1)])
 
             abs_mean_err = np.array(
                 [
                     [
                         mean_score,
                         median_score,
-                        (week1_score + week2_score + week4_score) / 3,
-                        week1_score,
-                        week2_score,
-                        week4_score,
                     ]
                 ]
             )
@@ -344,10 +314,6 @@ class TIMEBANDTrainer:
                     [
                         _mean_score,
                         _median_score,
-                        (_week1_score + _week2_score + _week4_score) / 3,
-                        _week1_score,
-                        _week2_score,
-                        _week4_score,
                     ]
                 ]
             )
@@ -366,7 +332,7 @@ class TIMEBANDTrainer:
         mean = results.mean(axis=1).values.reshape((-1, 1))
         results = pd.DataFrame(np.concatenate([results, mean], axis=1))
         results = results.set_axis(
-            ["Mean", "Median", "Week124", "Week1", "Week2", "Week4"], axis=0
+            ["Mean", "Median"], axis=0
         )
         # logger.info(f"\n{results}")
 
@@ -382,11 +348,11 @@ def loss_info(process, epoch, losses=None, i=0):
     return (
         f"[{process} e{epoch + 1:4d}]"
         f"Score {losses['Score']/(i+1):7.4f}("
-        f"D {losses['D']/(i+1):7.3f} "
-        f"G {losses['G']/(i+1):7.3f} "
+        f"D {losses['D']/(i+1):6.3f} "
+        f"G {losses['G']/(i+1):6.3f} "
         f"L1 {losses['l1']/(i+1):6.3f} "
         f"L2 {losses['l2']/(i+1):6.3f} "
-        f"GP {losses['GP']/(i+1):7.3f} "
+        f"GP {losses['GP']/(i+1):6.3f} "
     )
 
 

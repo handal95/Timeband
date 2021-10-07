@@ -4,9 +4,9 @@ import torch
 import random
 import numpy as np
 import pandas as pd
+import matplotlib as plt
 from TIMEBAND.core import TIMEBANDCore
 from utils.logger import Logger
-
 logger = Logger(__file__)
 
 torch.set_printoptions(precision=3, sci_mode=False)

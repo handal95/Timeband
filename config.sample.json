@@ -78,6 +78,9 @@
         "scope": 36,
         
         "features_by_rows": 13,
-        "xinterval": 60
+        "xinterval": 60,
+
+        "height": 10,
+        "width": 25
     }
 }

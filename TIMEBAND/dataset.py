@@ -98,7 +98,6 @@ class TIMEBANDDataset:
         self.window_sliding = config["window_sliding"]
 
         # Preprocess
-        self.log = config["log"]
         self.scaler = config["scaler"]
         self.cutoff_min = config["cutoff"]["min"]
         self.cutoff_max = config["cutoff"]["max"]
@@ -141,21 +140,19 @@ class TIMEBANDDataset:
 
         return data
 
-    def load_dataset(self, k):
-        train_set, valid_set, preds_set = self.process(k)
+    def load_dataset(self, k_step):
+        train_set, valid_set, preds_set = self.process(k_step)
 
-        self.train_set = Dataset(train_set)
-        self.valid_set = Dataset(valid_set)
-        self.preds_set = Dataset(preds_set)
+        self.trainset = Dataset(train_set)
+        self.validset = Dataset(valid_set)
+        self.predsset = Dataset(preds_set)
 
         # Feature info
-        self.shape = self.train_set.decoded.shape
-
-        self.encode_dims = self.train_set.encoded.shape[2]
-        self.decode_dims = self.train_set.decoded.shape[2]
+        self.encode_dims = self.trainset.encoded.shape[2]
+        self.decode_dims = self.trainset.decoded.shape[2]
         self.dims = {"encoded": self.encode_dims, "decoded": self.decode_dims}
 
-        return self.train_set, self.valid_set, self.preds_set
+        return self.trainset, self.validset, self.predsset
 
     def process(self, k_step=0):
         data = self.data.copy()
@@ -173,7 +170,7 @@ class TIMEBANDDataset:
         decode_real = data[self.targets].copy()
 
         # Preprocess
-        # data = self.impute_zero_value(data)
+        data = self.impute_zero_value(data)
         data = self.normalize(data)
 
         # Timestamp information append
@@ -264,7 +261,6 @@ class TIMEBANDDataset:
             },
             index=self.targets,
         )
-        logger.info(f"- Log   : {self.log}")
         logger.info(f"-----  Min Max information  -----\n{df_minmax.T}")
 
     def normalize(self, data):
@@ -288,8 +284,6 @@ class TIMEBANDDataset:
             batch_denorm = 0.5 * (batch_denorm + 1)
             batch_denorm = batch_denorm * delta
             batch_denorm = batch_denorm + self.decode_min
-            if self.log:
-                batch_denorm = torch.exp(batch_denorm) - 1
             data[batch] = batch_denorm
 
         return data
@@ -323,12 +317,14 @@ class TIMEBANDDataset:
         return data
 
     def get_random(self):
-        idx = np.random.randint(self.shape)
-        data = self.train_set[idx]
+        rand_scope = self.trainset.length - self.forecast_len
+        idx = np.random.randint(rand_scope)
+
+        data = self.trainset[idx:idx + self.forecast_len]
 
         encoded = data["encoded"].to(self.device)
         decoded = data["decoded"].to(self.device)
-
+        
         return encoded, decoded
 
     def onehot(self, data: pd.DataFrame, target: str, category: pd.Series):
