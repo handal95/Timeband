@@ -113,6 +113,14 @@ class TIMEBANDDataset:
         data.sort_index(ascending=True, inplace=True)
         data.index = pd.to_datetime(data.index)
 
+        origin_data = data.copy()
+        self.origin_cols = origin_data.columns
+        self.origin_data = torch.from_numpy(origin_data.to_numpy())
+
+        target_data = data[self.targets].copy()
+        self.target_cols = target_data.columns
+        self.target_data = torch.from_numpy(target_data.to_numpy())
+
         self.minmax_scaler(data)
 
         self.data_length = data.shape[0]
@@ -142,6 +150,7 @@ class TIMEBANDDataset:
 
         # Feature info
         self.shape = self.train_set.decoded.shape
+
         self.encode_dims = self.train_set.encoded.shape[2]
         self.decode_dims = self.train_set.decoded.shape[2]
         self.dims = {"encoded": self.encode_dims, "decoded": self.decode_dims}
