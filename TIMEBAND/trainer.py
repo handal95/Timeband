@@ -118,6 +118,8 @@ class TIMEBANDTrainer:
             # Best Model save
             self.netD, self.netG = models.update(self.netD, self.netG, valid_score)
 
+            self.dashboard.clear_figure()
+
         best_score = models.best_score
         netD_best, netG_best = models.load(postfix=f"{best_score:.4f}")
         models.save(netD_best, netG_best)
@@ -165,7 +167,7 @@ class TIMEBANDTrainer:
             real_x = data["observed"]
             real_y = data["forecast"]
             fake_y = generate(true_x)
-            
+
             batchs = true_y.shape[0]
 
             # Optimizer initialize
@@ -202,7 +204,7 @@ class TIMEBANDTrainer:
             losses["l1"] += errl1
             losses["l2"] += errl2
             losses["GP"] += errGP
-            
+
             if training:
                 errG.backward(retain_graph=True)
                 self.optimG.step()
@@ -211,15 +213,18 @@ class TIMEBANDTrainer:
             # Scoring
             # #######################
             pred_y = self.dataset.denormalize(fake_y.cpu())
+            self.concat(real_x, pred_y)
+
             losses["Score"] += self.metric.NMAE(pred_y, real_y).detach().numpy()
 
-            self.concat(real_x, pred_y)
             # self.result(real_y, training)
 
             # Losses Log
             tqdm.set_description(loss_info(TAG, epoch, losses, i))
             # self.data_process(real_x)
-            self.dashboard.visualize(batchs, self.reals, self.preds)
+            self.dashboard.visualize(
+                batchs, self.reals, self.preds, self.predictions, self.std
+            )
 
         # self.result(real_y, training)
 
@@ -246,29 +251,50 @@ class TIMEBANDTrainer:
             self.index = 0
             self.reals = torch.zeros((future_len, observe_len, origin_dim))
             self.preds = torch.zeros((future_len, future_len, target_dim))
-            self.answer = torch.zeros((future_len - 1, future_len, target_dim))
-            self.predictions = torch.zeros((future_len - 1, target_dim))
+
+            self.answer = torch.zeros((future_len, future_len, target_dim))
+            self.predictions = torch.zeros((future_len, target_dim))
+            self.std = torch.zeros((future_len, target_dim))
 
         zeros_3 = torch.zeros((batch_size, future_len, target_dim))
         zeros_2 = torch.zeros((batch_size, target_dim))
 
         self.reals = torch.cat([self.reals, real_x])
         self.preds = torch.cat([self.preds, pred_y])
-        
+
         self.answer = torch.cat([self.answer, zeros_3])
         self.predictions = torch.cat([self.predictions, zeros_2])
+        self.std = torch.cat([self.std, zeros_2])
 
         for f in range(future_len):
             idx_s = self.index + f
-            self.answer[idx_s:idx_s + batch_size, f] = self.preds[-batch_size:, f]
+            self.answer[idx_s : idx_s + batch_size, f] = self.preds[-batch_size:, f]
 
-        sub_answer = self.answer[-batch_size - future_len:]
-        mask = (sub_answer != 0)
-        mean = (sub_answer * mask).sum(dim=1)/mask.sum(dim=1)
-        self.predictions[-batch_size - future_len:] = mean
+        ans = self.answer[-batch_size - future_len :].detach().numpy()
+        ans[:-1][ans[:-1] == 0] = np.nan
+        median = np.nanmedian(ans, axis=1)
+        std = np.nanstd(ans, axis=1)  # / np.count_nonzero(~np.isnan(ans), axis=1)
+        GAMMA = (batch_size - 1) / batch_size
+        for f in range(future_len):
+            std[f - future_len] = (
+                std[f - future_len] + std[f - future_len - 1]
+            ) * GAMMA
+
+        self.predictions[-batch_size - future_len :] = torch.from_numpy(median)
+        self.std[-batch_size - future_len :] = torch.from_numpy(std)
+
+        df = pd.DataFrame(
+            np.concatenate(
+                [
+                    self.predictions[-batch_size - future_len :],
+                    median[-batch_size - future_len :],
+                    std[-batch_size - future_len :],
+                ],
+                axis=1,
+            )
+        )
 
         self.index += batch_size
-
 
     def result(self, y_pred, training=False):
         #### Result
@@ -331,9 +357,7 @@ class TIMEBANDTrainer:
 
         mean = results.mean(axis=1).values.reshape((-1, 1))
         results = pd.DataFrame(np.concatenate([results, mean], axis=1))
-        results = results.set_axis(
-            ["Mean", "Median"], axis=0
-        )
+        results = results.set_axis(["Mean", "Median"], axis=0)
         # logger.info(f"\n{results}")
 
         # data_gamma_df = pd.DataFrame(self.data_gamma).set_axis(["DataGamma"], axis=0)
@@ -347,7 +371,7 @@ def loss_info(process, epoch, losses=None, i=0):
 
     return (
         f"[{process} e{epoch + 1:4d}]"
-        f"Score {losses['Score']/(i+1):7.4f}("
+        f"Score {losses['Score']/(i+1):7.5f}("
         f"D {losses['D']/(i+1):6.3f} "
         f"G {losses['G']/(i+1):6.3f} "
         f"L1 {losses['l1']/(i+1):6.3f} "

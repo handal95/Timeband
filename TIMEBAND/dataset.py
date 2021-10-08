@@ -113,10 +113,12 @@ class TIMEBANDDataset:
         data.index = pd.to_datetime(data.index)
 
         origin_data = data.copy()
+        self.origin_df = origin_data
         self.origin_cols = origin_data.columns
         self.origin_data = torch.from_numpy(origin_data.to_numpy())
 
         target_data = data[self.targets].copy()
+        self.target_df = origin_data
         self.target_cols = target_data.columns
         self.target_data = torch.from_numpy(target_data.to_numpy())
 
@@ -320,11 +322,11 @@ class TIMEBANDDataset:
         rand_scope = self.trainset.length - self.forecast_len
         idx = np.random.randint(rand_scope)
 
-        data = self.trainset[idx:idx + self.forecast_len]
+        data = self.trainset[idx : idx + self.forecast_len]
 
         encoded = data["encoded"].to(self.device)
         decoded = data["decoded"].to(self.device)
-        
+
         return encoded, decoded
 
     def onehot(self, data: pd.DataFrame, target: str, category: pd.Series):

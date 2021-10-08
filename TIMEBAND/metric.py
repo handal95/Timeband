@@ -58,8 +58,8 @@ class TIMEBANDMetric:
     def _ignore_zero(self, pred, true):
         if self.zero_ignoring:
             target = torch.where(true != 0)
-            true = true[target]
             pred = pred[target]
+            true = true[target]
         return pred, true
 
     def _grad_penalty(self, pred, true):
