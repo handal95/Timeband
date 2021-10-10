@@ -9,6 +9,7 @@ from TIMEBAND.dataset import TIMEBANDDataset
 
 plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rc("font", family="Malgun Gothic")
+plt.rc("axes", unicode_minus=False)
 
 
 class TIMEBANDDashboard:
@@ -64,15 +65,15 @@ class TIMEBANDDashboard:
             return
 
         # Config subplots
-        nrows = 2 + (self.origin_dims - 1) // self.feats_by_rows
+        nrows = 1 # 2 + (self.origin_dims - 1) // self.feats_by_rows
         ncols = 1
         size = (self.width, self.height)
 
         plt.title("주가 데이터 Dashboard")
         fig, axes = plt.subplots(nrows, ncols, figsize=size, clear=True)
         # fig.tight_layout()
-
-        axes[0].set_title("TARGET FEATURES")
+        axes = [axes]
+        # axes[0].set_title("TARGET FEATURES")
 
         for i, ax in enumerate(axes[1:]):
             idx_s = i * self.feats_by_rows
@@ -99,14 +100,20 @@ class TIMEBANDDashboard:
         self.pred_data = np.concatenate(
             [self.pred_data, np.zeros((batchs, self.target_dims))]
         )
-        # self.lower = np.concatenate([self.lower, np.zeros((batchs, self.target_dims))])
-        # self.upper = np.concatenate([self.upper, np.zeros((batchs, self.target_dims))])
+        self.lower = np.concatenate([self.lower, np.zeros((batchs, self.target_dims))])
+        self.upper = np.concatenate([self.upper, np.zeros((batchs, self.target_dims))])
 
         self.pred_data[-batchs - self.forecast_len : -1] = predictions[
             -batchs - self.forecast_len : -1
         ]
-        # self.upper[-batchs:] = self.pred_data[-batchs:] + 2 * std[-batchs:]
-        # self.lower[-batchs:] = self.pred_data[-batchs:] - 2 * std[-batchs:]
+        self.upper[-self.forecast_len - batchs :] = (
+            self.pred_data[-self.forecast_len - batchs :]
+            + 2 * std[-self.forecast_len - batchs :]
+        )
+        self.lower[-self.forecast_len - batchs :] = (
+            self.pred_data[-self.forecast_len - batchs :]
+            - 2 * std[-self.forecast_len - batchs :]
+        )
 
         # self.pred_data = self.target_data[:self.index + self.observed_len + batchs + self.forecast_len]
         # print(self.pred_data.shape)
@@ -122,12 +129,12 @@ class TIMEBANDDashboard:
 
             axes[0].axvline(PIVOT, color="k")
             axes[0].axvline(OBSRV - 1, color="k")
-            axes[0].axvline(FRCST, color="k")
+            axes[0].axvline(FRCST - 1, color="k")
 
-            axes[0].axvspan(PIVOT, OBSRV - 1, color="b", alpha=0.1, label="Observed")
-            axes[0].axvspan(OBSRV - 1, FRCST, color="r", alpha=0.1, label="Forecast")
+            axes[0].axvspan(PIVOT, OBSRV - 1, alpha=0.05, label="Observed")
+            axes[0].axvspan(OBSRV - 1, FRCST - 1, alpha=0.05, label="Forecast")
 
-            xticks = np.arange(PIVOT, FRCST)
+            xticks = np.arange(PIVOT, FRCST - 1)
             timelabel = [self.timestamp[x + self.idx] for x in xticks]
 
             axes[0].set_xticks(xticks[:: self.xinterval])
@@ -141,13 +148,13 @@ class TIMEBANDDashboard:
                 axes[0].plot(
                     self.targets[PIVOT + self.idx : FRCST + self.idx, col],
                     alpha=0.5,
+                    label = label
                 )
-                axes[0].plot(
-                    true_ticks,
-                    self.targets[PIVOT + self.idx : OBSRV + self.idx, col],
-                    color="k",
-                    label=f"Real {label}",
-                )
+                # axes[0].plot(
+                #     true_ticks,
+                #     self.targets[PIVOT + self.idx : OBSRV + self.idx, col],
+                #     label=f"Real {label}",
+                # )
 
                 axes[0].plot(
                     pred_ticks,
@@ -159,46 +166,69 @@ class TIMEBANDDashboard:
                     ),
                     alpha=0.2,
                     linewidth=5,
-                    label=f"Pred {label}",
+                    # label=f"Pred {label}",
                 )
-            axes[0].legend(loc="center left")
+                # axes[0].fill_between(
+                #     np.arange(PIVOT, FRCST),
+                #     self.lower[PIVOT + self.idx : FRCST + self.idx, col],
+                #     self.upper[PIVOT + self.idx : FRCST + self.idx, col],
+                #     alpha=0.2,
+                #     label=f"Prediciont Band {label}",
+                # )
+            axes[0].legend(loc="lower left")
 
-            # 하단 그래프
-            SCOPE = max(0, self.idx - self.scope)
-            PIVOT = SCOPE + self.observed_len + min(self.scope, self.idx)
-            OBSRV = PIVOT - self.observed_len
-            FRCST = PIVOT + self.forecast_len - 1
+            # # 하단 그래프
+            # SCOPE = max(0, self.idx - self.scope)
+            # PIVOT = SCOPE + self.observed_len + min(self.scope, self.idx)
+            # OBSRV = PIVOT - self.observed_len
+            # FRCST = PIVOT + self.forecast_len - 1
 
-            xticks = np.arange(SCOPE, FRCST)
-            trueticks = np.arange(SCOPE, PIVOT)
-            timelabel = [self.timestamp[x] for x in xticks]
-            for i, ax in enumerate(axes[1:]):
-                ax.set_xticks(xticks[:: self.xinterval])
-                ax.set_xticklabels(timelabel[:: self.xinterval], rotation=30)
+            # xticks = np.arange(SCOPE, FRCST)
+            # trueticks = np.arange(SCOPE, PIVOT)
+            # timelabel = [self.timestamp[x] for x in xticks]
+            # for i, ax in enumerate(axes[1:]):
+            #     ax.set_xticks(xticks[:: self.xinterval])
+            #     ax.set_xticklabels(timelabel[:: self.xinterval], rotation=30)
 
-                idx_s = i * self.feats_by_rows
-                idx_e = idx_s + min(self.origin_dims - idx_s, self.feats_by_rows)
+            #     idx_s = i * self.feats_by_rows
+            #     idx_e = idx_s + min(self.origin_dims - idx_s, self.feats_by_rows)
 
-                ax.axvline(SCOPE)
-                ax.axvline(PIVOT - 1)
-                ax.axvline(OBSRV)
-                ax.axvline(FRCST)
+            #     ax.axvline(SCOPE)
+            #     ax.axvline(PIVOT - 1)
+            #     ax.axvline(OBSRV - 1)
+            #     ax.axvline(FRCST)
 
-                ax.axvspan(OBSRV, PIVOT - 1, alpha=0.1, label="Scope")
-                ax.axvspan(PIVOT - 1, FRCST, alpha=0.1, color='r', label="Forecast")
+            #     ax.axvspan(OBSRV - 1, PIVOT - 1, alpha=0.1, label="Observed window")
+            #     ax.axvspan(PIVOT - 1, FRCST, alpha=0.1, color="r", label="Forecast window")
 
-                # Origin data
-                for idx in range(idx_s, idx_e):
-                    feature_label = self.origin_cols[idx]
-                    alpha = 1.0 if feature_label in self.target_cols else 0.2
-                    ax.plot(
-                        trueticks,
-                        self.origin_data[SCOPE:PIVOT, idx],
-                        label=feature_label,
-                        alpha=alpha,
-                    )
+            #     # Origin data
+            #     for idx in range(idx_s, idx_e):
+            #         feature_label = self.origin_cols[idx]
+            #         if feature_label not in self.target_cols:
+            #             continue 
 
-                ax.legend(loc="center left")
+            #         alpha = 1.0 if feature_label in self.target_cols else 0.2
+            #         ax.plot(
+            #             np.arange(SCOPE, FRCST + 1),
+            #             self.origin_data[SCOPE: FRCST + 1, idx],
+            #             label=f"Real Value", # {feature_label}",
+            #             alpha=alpha,
+            #         )
+            #         ax.plot(
+            #             np.arange(SCOPE, FRCST + 1),
+            #             self.pred_data[SCOPE : FRCST + 1, col],
+            #             alpha=0.2,
+            #             linewidth=5,
+            #             label=f"Pred Value", # {feature_label}"
+            #         )
+            #         ax.fill_between(
+            #             np.arange(SCOPE, FRCST + 1),
+            #             self.lower[SCOPE : FRCST + 1, col],
+            #             self.upper[SCOPE : FRCST + 1, col],
+            #             label="Normal Band",
+            #             alpha=0.2,
+            #         )
+            #     ax.legend(loc="lower left")
 
             self.show_figure()
             self.idx += 1

@@ -214,7 +214,13 @@ class TIMEBANDTrainer:
             # #######################
             pred_y = self.dataset.denormalize(fake_y.cpu())
             self.concat(real_x, pred_y)
-
+            
+            # future_len = real_y.shape[1]
+            # answer = np.zeros((real_y.shape))
+            # for batch in range(batchs):
+            #     answer[batch] = self.predictions[batch-batchs-future_len:batch-batchs]
+            # answer = torch.from_numpy(answer)
+            
             losses["Score"] += self.metric.NMAE(pred_y, real_y).detach().numpy()
 
             # self.result(real_y, training)
@@ -274,6 +280,7 @@ class TIMEBANDTrainer:
         ans[:-1][ans[:-1] == 0] = np.nan
         median = np.nanmedian(ans, axis=1)
         std = np.nanstd(ans, axis=1)  # / np.count_nonzero(~np.isnan(ans), axis=1)
+
         GAMMA = (batch_size - 1) / batch_size
         for f in range(future_len):
             std[f - future_len] = (
@@ -282,7 +289,7 @@ class TIMEBANDTrainer:
 
         self.predictions[-batch_size - future_len :] = torch.from_numpy(median)
         self.std[-batch_size - future_len :] = torch.from_numpy(std)
-
+        
         df = pd.DataFrame(
             np.concatenate(
                 [
