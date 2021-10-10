@@ -10,15 +10,15 @@
         "directory": "data",
         "data_name": "sample",
 
-        "index_col": "날짜",
+        "index_col": "date",
         "index_format": "%Y-%m-%d",
 
         "year": "year",
         "month": "month",
         "weekday": "weekday",
 
-        "drops": ["drop col1", "drop col2", "drop col3", "drop col4"],
-        "targets": ["target col1", "target col2", "target col3", "target col4"],
+        "drops": [],
+        "targets": ["col4"],
 
         "stride": 1,
         "observed_len": 28,
@@ -36,7 +36,7 @@
     },
     "models": {
         "directory": "TIMEBAND/pretrained/",
-        "model_tag": "tag",
+        "model_tag": "sample",
         
         "load": true,
         "load_interval": 20,
