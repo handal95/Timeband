@@ -3,7 +3,7 @@
         "mode": "train",
 
         "workers": 2,
-        "batch_size": 28,
+        "batch_size": 64,
         "seed": 42
     },
     "dataset": {
@@ -21,8 +21,8 @@
         "targets": ["open", "close"],
 
         "stride": 1,
-        "observed_len": 28,
-        "forecast_len": 28,
+        "observed_len": 14,
+        "forecast_len": 14,
 
         "split_rate": 0.9,
         "window_scale": 2,
@@ -60,7 +60,7 @@
     "trainer": {
         "epochs": {
             "base": 0,
-            "iter": 10,
+            "iter": 50,
             "critic": 5
         },
         "learning_rate": {
