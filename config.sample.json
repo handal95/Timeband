@@ -8,7 +8,7 @@
     },
     "dataset": {
         "directory": "data",
-        "data_name": "sample",
+        "data_name": "stock.sample",
 
         "index_col": "date",
         "index_format": "%Y-%m-%d",
@@ -18,7 +18,7 @@
         "weekday": "weekday",
 
         "drops": [],
-        "targets": ["col4"],
+        "targets": ["open", "close"],
 
         "stride": 1,
         "observed_len": 28,
@@ -26,13 +26,13 @@
 
         "split_rate": 0.9,
         "window_scale": 2,
-        "window_sliding": 1,
+        "window_sliding": 10,
 
         "scaler": false,
         "impute": false,
         "cutoff": {
             "min": 0.01,
-            "max": 0
+            "max": 0.01
         }
     },
     "models": {
@@ -40,7 +40,7 @@
         "model_tag": "sample",
         
         "load": true,
-        "load_interval": 20,
+        "load_interval": 25,
 
         "reload": true,
         "reload_interval": 15,
@@ -76,7 +76,7 @@
     },
     "dashboard": {
         "visualize": false,
-        "scope": 36,
+        "scope": 180,
         
         "features_by_rows": 13,
         "xinterval": 60,
