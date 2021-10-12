@@ -1,5 +1,9 @@
 # Timeband
 
+<div align="center">
+    <img src="docs\source\timeband.png">
+</div>
+
 **Timeband** is an LSTM-GAN based model for simultaneous detection and correction of missing and outliers in multivariate time series data.
 
 ``` 
@@ -15,8 +19,6 @@ Step 6. Evaluate the models
 Step 7. Get the outputs
 ```
 
-
-![image](.\docs\source\timeband.PNG)
 
 ---
 ## Installation
