@@ -16,7 +16,7 @@ Step 7. Get the outputs
 ```
 
 
-![image](docs\source\timeband.PNG)
+![image](.\docs\source\timeband.PNG)
 
 ---
 ## Installation
