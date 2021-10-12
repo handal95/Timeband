@@ -29,6 +29,7 @@
         "window_sliding": 1,
 
         "scaler": false,
+        "impute": false,
         "cutoff": {
             "min": 0.01,
             "max": 0
