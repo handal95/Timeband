@@ -137,6 +137,7 @@ class TIMEBANDTrainer:
 
         losses = init_loss()
         TAG = "Train" if training else "Valid"
+        i = 0
         for i, data in enumerate(tqdm):
             # #######################
             # Critic

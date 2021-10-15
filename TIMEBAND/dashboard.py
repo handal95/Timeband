@@ -26,8 +26,8 @@ class TIMEBANDDashboard:
         self.set_config(config=config)
 
         # Dataset
+        self.time_idx = 0
         self.dataset = dataset
-        self.idx = 0
         self.origin_df = dataset.origin_df
         self.origin_data = dataset.origin_data
         self.origin_cols = dataset.origin_cols
@@ -69,8 +69,7 @@ class TIMEBANDDashboard:
         self.width = config["width"]
 
     def init_figure(self) -> tuple:
-        if self.fig is not None:
-            return
+        self.time_idx = 0
 
         # Config subplots
         nrows = 2 + (self.origin_dims - 1) // self.feats_by_rows
@@ -142,7 +141,7 @@ class TIMEBANDDashboard:
             axes[0].axvspan(OBSRV - 1, FRCST - 1, alpha=0.05, label="Forecast")
 
             xticks = np.arange(PIVOT, FRCST - 1)
-            timelabel = [self.timestamp[x + self.idx] for x in xticks]
+            timelabel = [self.timestamp[x + self.time_idx] for x in xticks]
 
             axes[0].set_xticks(xticks[:: self.xinterval])
             axes[0].set_xticklabels(timelabel[:: self.xinterval], rotation=30)
@@ -153,14 +152,9 @@ class TIMEBANDDashboard:
                 label = self.target_cols[col]
                 color = COLORS[col]
 
-                # axes[0].plot(
-                #     self.targets[PIVOT + self.idx : FRCST + self.idx, col],
-                #     alpha=0.5,
-                #     label = label
-                # )
                 axes[0].plot(
                     true_ticks,
-                    self.targets[PIVOT + self.idx : OBSRV + self.idx, col],
+                    self.targets[PIVOT + self.time_idx : OBSRV + self.time_idx, col],
                     color=color,
                     label=f"Real {label}",
                 )
@@ -169,8 +163,8 @@ class TIMEBANDDashboard:
                     pred_ticks,
                     np.concatenate(
                         [
-                            self.targets[OBSRV + self.idx - 1 : OBSRV + self.idx, col],
-                            self.pred_data[OBSRV + self.idx : FRCST + self.idx, col],
+                            self.targets[OBSRV + self.time_idx - 1 : OBSRV + self.time_idx, col],
+                            self.pred_data[OBSRV + self.time_idx : FRCST + self.time_idx, col],
                         ]
                     ),
                     alpha=0.2,
@@ -180,8 +174,8 @@ class TIMEBANDDashboard:
                 )
                 axes[0].fill_between(
                     np.arange(PIVOT, FRCST),
-                    self.lower[PIVOT + self.idx : FRCST + self.idx, col],
-                    self.upper[PIVOT + self.idx : FRCST + self.idx, col],
+                    self.lower[PIVOT + self.time_idx : FRCST + self.time_idx, col],
+                    self.upper[PIVOT + self.time_idx : FRCST + self.time_idx, col],
                     alpha=0.2,
                     color=color,
                     label=f"Prediciont Band {label}",
@@ -189,8 +183,8 @@ class TIMEBANDDashboard:
             axes[0].legend(loc="lower left")
 
             # 하단 그래프
-            SCOPE = max(0, self.idx - self.scope)
-            PIVOT = SCOPE + self.observed_len + min(self.scope, self.idx)
+            SCOPE = max(0, self.time_idx - self.scope)
+            PIVOT = SCOPE + self.observed_len + min(self.scope, self.time_idx)
             OBSRV = PIVOT - self.observed_len
             FRCST = PIVOT + self.forecast_len - 1
 
@@ -249,7 +243,7 @@ class TIMEBANDDashboard:
                 ax.legend(loc="lower left")
 
             self.show_figure()
-            self.idx += 1
+            self.time_idx += 1
 
     def reset_figure(self):
         # Clear previous figure
@@ -271,3 +265,6 @@ class TIMEBANDDashboard:
 
     def clear_figure(self):
         plt.close("all")
+        plt.clf()
+        self.fig = None
+        self.axes = None
