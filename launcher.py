@@ -5,8 +5,9 @@ import random
 import numpy as np
 import pandas as pd
 
-from TIMEBAND.core import TIMEBANDCore
+from utils.args import Parser
 from utils.logger import Logger
+from TIMEBAND.core import TIMEBANDCore
 
 logger = Logger(__file__)
 
@@ -20,9 +21,9 @@ def use_default_config(path: os.path = "config.json"):
     """
     User Default Configuration settings
     """
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            config = json.load(f)
+    with open(path, encoding="utf-8") as f:
+        config = json.load(f)
+
     return config
 
 
@@ -52,8 +53,11 @@ def launcher():
     logger.info("- System  Setting -")
     logger.info("*********************")
 
-    config = use_default_config("config.json")
     seeding(31)
+    with open("config.json", encoding="utf-8") as f:
+        config = json.load(f)
+
+    config = Parser(config).config
 
     logger.info("*********************")
     logger.info("- Model Setting -")

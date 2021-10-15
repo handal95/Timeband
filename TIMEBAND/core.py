@@ -1,4 +1,3 @@
-from utils.args import load_yaml
 from utils.logger import Logger
 from utils.device import init_device
 
@@ -21,7 +20,7 @@ class TIMEBANDCore:
 
     """
 
-    def __init__(self, config: dict = None) -> None:
+    def __init__(self, config: dict) -> None:
         # Set device
         self.device = init_device()
 
@@ -43,18 +42,14 @@ class TIMEBANDCore:
     def init_dataset(self):
         self.dataset = TIMEBANDDataset(self.dataset_cfg, self.device)
 
-    def set_config(self, config: dict = None) -> None:
+    def set_config(self, config: dict) -> None:
         """
         Setting configuration
 
         If config/config.json is not exists,
         Use default config 'config.yml'
         """
-        if config is None:
-            logger.info("  Config : Default configs")
-            config = load_yaml()
-        else:
-            logger.info("  Config : JSON configs")
+        logger.info("  Config : config settings")
 
         core = config["core"]
 
