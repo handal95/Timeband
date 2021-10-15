@@ -69,8 +69,7 @@ class TIMEBANDDashboard:
         self.width = config["width"]
 
     def init_figure(self) -> tuple:
-        if self.fig is not None:
-            return
+        self.time_idx = 0
 
         # Config subplots
         nrows = 2 + (self.origin_dims - 1) // self.feats_by_rows
@@ -90,7 +89,6 @@ class TIMEBANDDashboard:
             ax.set_title(subplot_title)
 
         self.fig, self.axes = fig, axes
-        self.time_idx = 0
 
     def visualize(self, batchs, reals, preds, predictions, std):
         if self.visual is False:
@@ -267,3 +265,6 @@ class TIMEBANDDashboard:
 
     def clear_figure(self):
         plt.close("all")
+        plt.clf()
+        self.fig = None
+        self.axes = None

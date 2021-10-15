@@ -1,8 +1,15 @@
 # Timeband Release Notes
 ## **TIMEBAND 2.0** 
 Forecasting on **multivariable** Time Series data
+### October 15, 2021 / v2.0 HOTFIX
+#### Bug Fixes
+- Fix initializing dashboard time index
+- Fix closing dashboard window
+- Fix small validset index error
 
-### October 10, 2021
+---
+
+### October 10, 2021 / v2.0
 #### New Features
 - Multivariate Data Prediction
 - Introduction of encoder decoder architecture
