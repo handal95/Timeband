@@ -18,7 +18,7 @@ class Parser:
         parser.add_argument(
             "-v",
             "--visualize",
-            type=bool,
+            type=self.str2bool,
             help="Visualize options",
             default=config["dashboard"]["visualize"],
         )
@@ -44,7 +44,20 @@ class Parser:
         config["dashboard"]["height"] = parser.dashboard_height
         config["dashboard"]["visualize"] = parser.visualize
 
+        config["dataset"]["batch_size"] = config["core"]["batch_size"]
+
         return config
+
+    def str2bool(self, value: str): 
+        if isinstance(value, bool): 
+            return value 
+        
+        if value.lower() in ('yes', 'true', 't', 'y', '1'): 
+            return True 
+        elif value.lower() in ('no', 'false', 'f', 'n', '0'): 
+            return False 
+        
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
     def __str__(self):
         return str(self.opt)

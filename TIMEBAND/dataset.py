@@ -1,12 +1,7 @@
 import os
 import torch
-import typing
 import numpy as np
 import pandas as pd
-from datetime import datetime
-from dateutil.parser import parse
-from torch.functional import split
-from torch.utils.data import DataLoader
 from utils.logger import Logger
 from utils.preprocess import onehot_encoding
 
@@ -16,9 +11,7 @@ logger = Logger(__file__)
 
 class Dataset:
     def __init__(self, dataset):
-        self.observed = dataset["observed"]
         self.forecast = dataset["forecast"]
-
         self.encoded = dataset["encoded"]
         self.decoded = dataset["decoded"]
 
@@ -29,7 +22,6 @@ class Dataset:
 
     def __getitem__(self, idx):
         data = {
-            "observed": torch.tensor(self.observed[idx], dtype=torch.float32),
             "forecast": torch.tensor(self.forecast[idx], dtype=torch.float32),
             "encoded": torch.tensor(self.encoded[idx], dtype=torch.float32),
             "decoded": torch.tensor(self.decoded[idx], dtype=torch.float32),
@@ -90,6 +82,7 @@ class TIMEBANDDataset:
         self.targets = config["targets"]
 
         self.stride = config["stride"]
+        self.batch_size = config["batch_size"]
         self.observed_len = config["observed_len"]
         self.forecast_len = config["forecast_len"]
 
@@ -118,12 +111,9 @@ class TIMEBANDDataset:
         self.origin_cols = origin_data.columns
         self.origin_data = torch.from_numpy(origin_data.to_numpy())
 
-        target_data = data[self.targets].copy()
-        self.target_df = origin_data
-        self.target_cols = target_data.columns
-        self.target_data = torch.from_numpy(target_data.to_numpy())
-
-        self.minmax_scaler(data)
+        observed = data[self.targets][:self.observed_len].copy()
+        self.observed = torch.from_numpy(observed.to_numpy())
+        self.target_cols = self.targets
 
         self.data_length = data.shape[0]
         self.origin_dims = data.shape[1]
@@ -135,6 +125,10 @@ class TIMEBANDDataset:
         self.month_cat = self.onehot(data, self.month, self.timestamp.dt.month_name())
         self.weekday_cat = self.onehot(data, self.weekday, self.timestamp.dt.day_name())
         self.timestamp = data.index.strftime(self.index_format).tolist()
+        
+        # Datashape
+        self.encode_shape = (self.batch_size, self.observed_len, self.encode_dims)
+        self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dims)
 
         logger.info(f"  - File   : {csv_path}")
         logger.info(f"  - Index  : {self.index_col}")
@@ -155,12 +149,17 @@ class TIMEBANDDataset:
         self.decode_dims = self.trainset.decoded.shape[2]
         self.dims = {"encoded": self.encode_dims, "decoded": self.decode_dims}
 
+        self.train_size = self.trainset.encoded.shape[0]
+        self.valid_size = self.validset.encoded.shape[0]
+        self.data_size = self.train_size + self.valid_size
+        logger.info(f"  - Encode dim : {self.encode_dims} // Decode dim {self.decode_dims}")
+        logger.info(f"  - Train size : {self.train_size} // Valid size {self.valid_size}")
+
         return self.trainset, self.validset, self.predsset
 
     def process(self, k_step=0):
-        data = self.data.copy()
+        data = self.data.copy(deep=True)
 
-        train_minlen = int(self.window_scale * self.observed_len)
         valid_minlen = int(self.window_scale * self.forecast_len)
 
         # Timeseries K Sliding window
@@ -169,34 +168,38 @@ class TIMEBANDDataset:
 
         # Keep Real Data
         data_length = len(data)
-        encode_real = data.copy()
-        decode_real = data[self.targets].copy()
+        decode_real = data[self.targets].copy(deep=True)
 
         # Preprocess
         if self.impute:
             data = self.impute_zero_value(data)
+
+        self.minmax_scaler(data)
         data = self.normalize(data)
 
+
         # Timestamp information append
+        years = pd.Series(self.data.index.year.values, name="year", index=self.data.index)
+        years = 2 * ((years[:data_length] - years[0]) / (years[-1] - years[0])) - 1
         month = self.month_cat[:data_length]
         weekday = self.weekday_cat[:data_length]
+
+        data = pd.concat([data, years], axis=1)
         data = pd.concat([data, month], axis=1)
         data = pd.concat([data, weekday], axis=1)
-
+        
         # Encoded Split, Decoded Set split
         encode_data = data.copy()
         decode_data = data[self.targets].copy()
 
         # Windowing data
         stop = data_length - self.observed_len - self.forecast_len
-        observed, _ = self.windowing(encode_real, stop)
         _, forecast = self.windowing(decode_real, stop)
         encoded, _ = self.windowing(encode_data, stop)
         _, decoded = self.windowing(decode_data, stop)
 
         def get_dataset(idx_s: int = 0, idx_e: int = data_length) -> dict:
             dataset = {
-                "observed": observed[idx_s:idx_e],
                 "forecast": forecast[idx_s:idx_e],
                 "encoded": encoded[idx_s:idx_e],
                 "decoded": decoded[idx_s:idx_e],
@@ -210,14 +213,8 @@ class TIMEBANDDataset:
         valid_set = get_dataset(idx_s=split_idx, idx_e=-1)
         preds_set = get_dataset(idx_s=-2 * self.forecast_len)
 
-        logger.info(f"Data len: {data_length}")
+        logger.info(f"Data len: {data_length}, Columns : {data.columns}")
         return train_set, valid_set, preds_set
-
-    def get_time_arange(self, times):
-        first_day = times.values[0] + np.timedelta64(1, "D")
-        last_day = times.values[-1] + np.timedelta64(1 + self.forecast_len, "D")
-        time_arange = np.arange(first_day, last_day, dtype="datetime64[D]")
-        return time_arange
 
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
         observed = []
@@ -250,8 +247,8 @@ class TIMEBANDDataset:
             data[col][data[col] < pivot_min] = pivot_min
             data[col][data[col] > pivot_max] = pivot_max
 
-        self.encode_min = data.min()
-        self.encode_max = data.max(0) * 1.05
+        self.encode_min = data.min(0) * 0.8
+        self.encode_max = data.max(0) * 1.1
 
         self.decode_min = torch.tensor(self.encode_min[self.targets])
         self.decode_max = torch.tensor(self.encode_max[self.targets])
@@ -294,29 +291,23 @@ class TIMEBANDDataset:
 
     def impute_zero_value(self, data):
         for col in data:
-            if data[col].dtype == "object":
-                continue
+            for row in range(len(data[col])):
+                if data[col][row] <= 0:
+                    yesterday = data[col][max(0, row - 1)]
+                    last_week = data[col][max(0, row - 7)]
+                    last_year = data[col][max(0, row - 365)]
+                    candidates = [yesterday, last_week, last_year]
+                    try:
+                        while 0 in candidates:
+                            candidates.remove(0)
+                    except ValueError:
+                        pass
 
-            try:
-                for row in range(len(data[col])):
-                    if data[col][row] <= 0:
-                        yesterday = data[col][max(0, row - 1)]
-                        last_week = data[col][max(0, row - 7)]
-                        last_year = data[col][max(0, row - 365)]
-                        candidates = [yesterday, last_week, last_year]
-                        try:
-                            while 0 in candidates:
-                                candidates.remove(0)
-                        except ValueError:
-                            pass
-
-                        if len(candidates) == 0:
-                            mean_value = 0
-                        else:
-                            mean_value = np.mean(candidates)
-                        data[col][row] = mean_value
-            except:
-                input()
+                    if len(candidates) == 0:
+                        mean_value = 0
+                    else:
+                        mean_value = np.mean(candidates)
+                    data[col][row] = mean_value
 
         return data
 
@@ -351,9 +342,3 @@ class TIMEBANDDataset:
         data = data.astype(str)
         data = pd.to_datetime(data)
         return data
-
-    def __len__(self):
-        return self.length
-
-    def __getitem__(self, idx):
-        return self.train_dataset[idx]
