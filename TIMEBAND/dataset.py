@@ -36,7 +36,7 @@ class TIMEBANDDataset:
 
     """
 
-    def __init__(self, config: dict, device: torch.device, mode: str = "Train") -> None:
+    def __init__(self, config: dict, device: torch.device) -> None:
         """
         TIMEBAND Dataset
 
@@ -44,17 +44,24 @@ class TIMEBANDDataset:
             config: Dataset configuration dict
             device: Torch device (cpu / cuda:0)
         """
-        logger.info("  Dataset: ")
-
         # Set Config
-        self.mode = mode
         self.set_config(config)
 
         # Set device
         self.device = device
 
         # Load Data
-        self.data = self.load_data()
+        self.data = self.init_dataset()
+
+        # Information
+        logger.info(
+            f"\n  Dataset: \n"
+            f"  - File path : {self.csv_path} \n"
+            f"  - Time Idx  : {self.time_index} \n"
+            f"  - Length    : {self.data_length} \n"
+            f"  - Shape(E/D): {self.encode_shape} / {self.decode_shape} \n"
+            f"  - Targets   : {self.targets} ({self.decode_dim} cols) \n"
+        )
 
     def set_config(self, config: dict) -> None:
         """
@@ -95,53 +102,37 @@ class TIMEBANDDataset:
         self.cutoff_min = config["cutoff"]["min"]
         self.cutoff_max = config["cutoff"]["max"]
 
-    def load_data(self) -> pd.DataFrame:
+    def init_dataset(self) -> pd.DataFrame:
         # Read csv data
-        csv_path = f"{self.data_path}.csv"
-        data = pd.read_csv(csv_path)
-        data[self.time_index] = self.parse_datetime(data[self.time_index])
+        self.csv_path = f"{self.data_path}.csv"
+        data = pd.read_csv(self.csv_path)
         data.drop(self.drops, axis=1, inplace=True)
+
+        # Time indexing
+        data[self.time_index] = self.parse_datetime(data[self.time_index])
         data.set_index(self.time_index, inplace=True)
         data.sort_index(ascending=True, inplace=True)
         data.index = pd.to_datetime(data.index)
+        self.times = data.index.strftime(self.time_format).tolist()
 
-        origin_data = data.copy()
-        self.origin_df = origin_data
-        self.origin_cols = origin_data.columns
-        self.origin_data = torch.from_numpy(origin_data.to_numpy())
+        # Time Encoding
+        times = data.index.to_series()
+        data = self.onehot(data, times.dt.month_name()) if self.onehot_month else data
+        data = self.onehot(data, times.dt.day_name()) if self.onehot_weekday else data
 
+        # First observed
         observed = data[self.targets][: self.observed_len].copy()
         self.observed = torch.from_numpy(observed.to_numpy())
-        self.target_cols = self.targets
 
         self.data_length = data.shape[0]
-
-        self.encode_dim = len(origin_data.columns)
+        self.encode_dim = len(data.columns)
         self.decode_dim = len(self.targets)
-
-        # Keep Time information
-        self.times = data.index.to_series()
-        if self.onehot_month:
-            month = self.onehot(data, self.times.dt.month_name())
-            data = pd.concat([data, month], axis=1)
-
-        if self.onehot_weekday:
-            weekday = self.onehot(data, self.times.dt.day_name())
-            data = pd.concat([data, weekday], axis=1)
-        self.times = data.index.strftime(self.time_format).tolist()
 
         # Datashape
         self.encode_shape = (self.batch_size, self.observed_len, self.encode_dim)
         self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dim)
         self.dims = {"encode": self.encode_dim, "decode": self.decode_dim}
         
-
-        logger.info(f"  - File   : {csv_path}")
-        logger.info(f"  - Index  : {self.time_index}")
-        logger.info(f"  - Length : {self.data_length}")
-        logger.info(f"  - Encode dim : {self.encode_dim}, Decode dim {self.decode_dim}")
-        logger.info(f"  - Target : {self.targets} ({self.decode_dim} cols)")
-
         return data
 
     def load_dataset(self, k_step):
@@ -151,10 +142,9 @@ class TIMEBANDDataset:
         self.validset = Dataset(valid_set)
 
         # Feature info
-
         self.train_size = self.trainset.encoded.shape[0]
         self.valid_size = self.validset.encoded.shape[0]
-        self.data_size = self.train_size + self.valid_size
+        self.data_length = self.train_size + self.valid_size
         logger.info(f"  - Train size : {self.train_size}, Valid size {self.valid_size}")
         return self.trainset, self.validset
 
@@ -311,13 +301,10 @@ class TIMEBANDDataset:
         """
         Onehot Encoding
         """
-
         encoded = onehot_encoding(category)
         encoded.index = data.index
 
-        self.encode_dim += encoded.shape[1]
-
-        return encoded
+        return pd.concat([data, encoded], axis=1)
 
     def parse_datetime(self, data):
         data = data.astype(str)
