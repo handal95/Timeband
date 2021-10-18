@@ -74,8 +74,8 @@ class TIMEBANDDataset:
         self.time_index = config["time_index"]
         self.time_format = config["time_format"]
 
-        self.encoding_month = config["time_encoding"]["month"]
-        self.encoding_week = config["time_encoding"]["weekday"]
+        self.onehot_month = config["time_encoding"]["month"]
+        self.onehot_weekday = config["time_encoding"]["weekday"]
 
         self.drops = config["drops"]
         self.targets = config["targets"]
@@ -115,24 +115,32 @@ class TIMEBANDDataset:
         self.target_cols = self.targets
 
         self.data_length = data.shape[0]
-        self.origin_dims = data.shape[1]
-        self.encode_dims = data.shape[1]
-        self.decode_dims = len(self.targets)
+
+        self.encode_dim = len(origin_data.columns)
+        self.decode_dim = len(self.targets)
 
         # Keep Time information
-        self.timestamp = data.index.to_series()
-        self.month_cat = self.onehot(data, self.encoding_month, self.timestamp.dt.month_name())
-        self.weekday_cat = self.onehot(data, self.encoding_week, self.timestamp.dt.day_name())
-        self.timestamp = data.index.strftime(self.time_format).tolist()
+        self.times = data.index.to_series()
+        if self.onehot_month:
+            month = self.onehot(data, self.times.dt.month_name())
+            data = pd.concat([data, month], axis=1)
+
+        if self.onehot_weekday:
+            weekday = self.onehot(data, self.times.dt.day_name())
+            data = pd.concat([data, weekday], axis=1)
+        self.times = data.index.strftime(self.time_format).tolist()
 
         # Datashape
-        self.encode_shape = (self.batch_size, self.observed_len, self.encode_dims)
-        self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dims)
+        self.encode_shape = (self.batch_size, self.observed_len, self.encode_dim)
+        self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dim)
+        self.dims = {"encode": self.encode_dim, "decode": self.decode_dim}
+        
 
         logger.info(f"  - File   : {csv_path}")
         logger.info(f"  - Index  : {self.time_index}")
         logger.info(f"  - Length : {self.data_length}")
-        logger.info(f"  - Target : {self.targets} ({self.decode_dims} cols)")
+        logger.info(f"  - Encode dim : {self.encode_dim}, Decode dim {self.decode_dim}")
+        logger.info(f"  - Target : {self.targets} ({self.decode_dim} cols)")
 
         return data
 
@@ -143,26 +151,18 @@ class TIMEBANDDataset:
         self.validset = Dataset(valid_set)
 
         # Feature info
-        self.encode_dims = self.trainset.encoded.shape[2]
-        self.decode_dims = self.trainset.decoded.shape[2]
-        self.dims = {"encoded": self.encode_dims, "decoded": self.decode_dims}
 
         self.train_size = self.trainset.encoded.shape[0]
         self.valid_size = self.validset.encoded.shape[0]
         self.data_size = self.train_size + self.valid_size
-        logger.info(
-            f"  - Encode dim : {self.encode_dims} // Decode dim {self.decode_dims}"
-        )
-        logger.info(
-            f"  - Train size : {self.train_size} // Valid size {self.valid_size}"
-        )
+        logger.info(f"  - Train size : {self.train_size}, Valid size {self.valid_size}")
         return self.trainset, self.validset
 
     def process(self, k_step=0):
         data = self.data.copy(deep=True)
 
         data_len = self.data_length - self.window_sliding + k_step
-        data = data[: data_len] if k_step <= self.window_sliding else data
+        data = data[:data_len] if k_step <= self.window_sliding else data
         decode_real = data[self.targets].copy(deep=True)
 
         # Preprocess
@@ -171,15 +171,6 @@ class TIMEBANDDataset:
 
         self.minmax_scaler(data)
         data = self.normalize(data)
-
-        # Timestamp information append
-        if self.encoding_month:
-            month = self.month_cat[:data_len]
-            data = pd.concat([data, month], axis=1)
-
-        if self.encoding_week:
-            weekday = self.weekday_cat[:data_len]
-            data = pd.concat([data, weekday], axis=1)
 
         # Encoded Split, Decoded Set split
         encode_data = data.copy()
@@ -241,8 +232,8 @@ class TIMEBANDDataset:
             data[col][data[col] < pivot_min] = pivot_min
             data[col][data[col] > pivot_max] = pivot_max
 
-        self.encode_min = data.min(0) * (1 - min_p)
-        self.encode_max = data.max(0) * (1 + max_p)
+        self.encode_min = data.min(0) * (1 - 10 * min_p)
+        self.encode_max = data.max(0) * (1 + 10 * max_p)
 
         self.decode_min = torch.tensor(self.encode_min[self.targets])
         self.decode_max = torch.tensor(self.encode_max[self.targets])
@@ -316,19 +307,15 @@ class TIMEBANDDataset:
 
         return encoded, decoded
 
-    def onehot(self, data: pd.DataFrame, target: str, category: pd.Series):
+    def onehot(self, data: pd.DataFrame, category: pd.Series):
         """
         Onehot Encoding
         """
 
-        self.encode_dims += len(category)
-
-        if target in data.columns:
-            data.drop(target, inplace=True, axis=1)
-            self.encode_dims -= 1
-
         encoded = onehot_encoding(category)
         encoded.index = data.index
+
+        self.encode_dim += encoded.shape[1]
 
         return encoded
 

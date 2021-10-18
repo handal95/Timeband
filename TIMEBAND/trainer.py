@@ -4,6 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from torch.optim import RMSprop
 
+from utils.color import colorstr
 from utils.logger import Logger
 from TIMEBAND.model import TIMEBANDModel
 from TIMEBAND.metric import TIMEBANDMetric
@@ -74,14 +75,15 @@ class TIMEBANDTrainer:
 
         # Visual option
         self.print_cfg = config["print"]
+        
+        # Model option
+        self.netD, self.netG = self.models.netD, self.models.netG
 
     def train(self, trainset, validset):
         logger.info("Train the model")
 
         # Models Setting
         models = self.models
-        self.netD, self.netG = models.init(self.dataset.dims)
-
         self.optimD = RMSprop(self.netD.parameters(), lr=self.lr * self.lr_gammaD)
         self.optimG = RMSprop(self.netG.parameters(), lr=self.lr * self.lr_gammaG)
 
@@ -89,6 +91,7 @@ class TIMEBANDTrainer:
         train_score_plot = []
         valid_score_plot = []
         EPOCHS = self.base_epochs + self.iter_epochs
+
         for epoch in range(self.base_epochs, EPOCHS):
             self.preds = None
             self.data = None
@@ -180,8 +183,8 @@ class TIMEBANDTrainer:
             errD_real = self.metric.GANloss(Dx, target_is_real=True)
             errD_fake = self.metric.GANloss(Dy, target_is_real=False)
 
-            losses["Dr"] += errD_real    
-            losses["Df"] += errD_fake    
+            losses["Dr"] += errD_real
+            losses["Df"] += errD_fake
 
             losses["D"] += errD_real + errD_fake
 
@@ -217,35 +220,38 @@ class TIMEBANDTrainer:
             (batchs, forecast_len, target_dims) = true_y.shape
             self.pred_concat(pred_y, real_y)
 
+            losses["Score"] += (
+                self.metric.NMAE(
+                    torch.from_numpy(self.pred_ans[-batchs - forecast_len :])
+                    * self.amplifier,
+                    torch.from_numpy(self.real_ans[-batchs - forecast_len :]),
+                )
+                .detach()
+                .numpy()
+            )
 
-            losses["Score"] += self.metric.NMAE(
-                torch.from_numpy(self.pred_ans[-batchs-forecast_len:]) * self.amplifier,
-                torch.from_numpy(self.real_ans[-batchs-forecast_len:])
-            ).detach().numpy()
-
+            losses["RMSE"] += self.metric.RMSE(pred_y, real_y).detach().numpy()
             losses["Score_raw"] += self.metric.NMAE(pred_y, real_y).detach().numpy()
             nme = self.metric.NME(pred_y * self.amplifier, real_y).detach().numpy()
-            
-            if training and i > 100:
+
+            if training and i > 20:
                 amplifier += nme * amplifier * (batchs / self.dataset.data_size) * 0.1
 
             losses["NME"] += nme
             # Losses Log
             tqdm.set_description(loss_info(TAG, epoch, losses, i))
-
             if not training:
                 self.dashboard.visualize(
                     batchs,
                     real_y,
                     pred_y,
-                    self.pred_ans[-batchs-forecast_len:],
-                    self.pred_std[-batchs-forecast_len:]
+                    self.pred_ans[-batchs - forecast_len :],
+                    self.pred_std[-batchs - forecast_len :],
                 )
 
         if training:
             print(f"Amplifier {self.amplifier:2.5f}, {amplifier:2.5f}")
-            self.amplifier = self.amplifier + (amplifier - self.amplifier)
-
+            self.amplifier = self.amplifier + (amplifier - self.amplifier) * 0.1
 
         return losses["Score"] / (i + 1)
 
@@ -254,7 +260,7 @@ class TIMEBANDTrainer:
         (batch_size, forecast_len, target_dims) = decoded_shape
 
         init_shape3 = (forecast_len - 1, forecast_len, target_dims)
-        init_shape2 = (forecast_len - 1, target_dims) 
+        init_shape2 = (forecast_len - 1, target_dims)
 
         self.pred_idx = 0
 
@@ -267,11 +273,11 @@ class TIMEBANDTrainer:
         self.pred_ans[:] = np.nan
 
         self.pred_std = np.zeros(init_shape2)
-        
+
     def pred_concat(self, pred, reals):
         (batch_size, forecast_len, target_dims) = pred.shape
         pred = pred.detach().numpy()
-        
+
         nan_shape3 = np.empty((batch_size, forecast_len, target_dims))
         nan_shape3[:] = np.nan
         nan_shape2 = np.empty((batch_size, target_dims))
@@ -279,7 +285,7 @@ class TIMEBANDTrainer:
 
         self.pred_data = np.concatenate([self.pred_data, nan_shape3])
         if self.real_ans.shape[0] < forecast_len:
-            self.real_ans[:forecast_len - 1] = reals[0, :- 1] 
+            self.real_ans[: forecast_len - 1] = reals[0, :-1]
         self.real_ans = np.concatenate([self.real_ans, nan_shape2])
 
         self.pred_ans = np.concatenate([self.pred_ans, nan_shape2])
@@ -289,30 +295,32 @@ class TIMEBANDTrainer:
         for f in range(forecast_len):
             idx_s = self.pred_idx + f
             idx_e = self.pred_idx + batch_size + f
-            self.pred_data[idx_s: idx_e, f] = pred[:, f]
-            
+            self.pred_data[idx_s:idx_e, f] = pred[:, f]
+
         for b in range(batch_size):
             self.real_ans[-batch_size + b] = reals[b, -1]
-        
+
         update_idx = -batch_size - forecast_len
         self.pred_ans[update_idx:] = np.nanmedian(self.pred_data[update_idx:], axis=1)
         self.pred_std[update_idx:] = np.nanstd(self.pred_data[update_idx:], axis=1)
 
         for f in range(forecast_len - 1, 0, -1):
             gamma = (forecast_len - f) / (forecast_len - 1)
-            self.pred_std[-f] += self.pred_std[-f-1] * gamma
+            self.pred_std[-f] += self.pred_std[-f - 1] * gamma
 
         self.pred_idx += batch_size
-        
-        
+
+
 def loss_info(process, epoch, losses=None, i=0):
     if losses is None:
         losses = init_loss()
 
+    score = f"{losses['Score'] / (i + 1):7.5f}"
     return (
         f"[{process} e{epoch + 1:4d}]"
         f"Score {losses['Score_raw']/(i+1):7.5f} / "
-        f"{losses['Score']/(i+1):7.5f} / "
+        f"{colorstr(score)} / "
+        f"{losses['RMSE']/(i+1):7.5f} / "
         f"{losses['NME']/(i+1):7.4f}  ("
         f"D {losses['D']/(i+1):6.3f} "
         f"(R {losses['Dr']/(i+1):6.3f}, "
@@ -334,6 +342,7 @@ def init_loss() -> dict:
         "l2": 0,
         "GP": 0,
         "NME": 0,
+        "RMSE": 0,
         "Score": 0,
         "Score_raw": 0,
     }

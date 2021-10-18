@@ -69,6 +69,7 @@ class TIMEBANDCore:
 
     def train(self) -> None:
         # Model train
+        self.models.init_models(dims=self.dataset.dims)
         self.trainer = TIMEBANDTrainer(
             self.trainer_cfg,
             self.dataset,
