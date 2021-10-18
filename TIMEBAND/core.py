@@ -82,7 +82,7 @@ class TIMEBANDCore:
             logger.info(f"Run ({k + 1}/{self.dataset.window_sliding + 1})")
 
             # Dataset
-            trainset, validset, _ = self.dataset.load_dataset(k + 1)
+            trainset, validset = self.dataset.load_dataset(k + 1)
             trainset = self.loader(trainset)
             validset = self.loader(validset)
 

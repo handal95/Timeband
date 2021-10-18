@@ -87,7 +87,7 @@ class TIMEBANDDataset:
         self.forecast_len = config["forecast_len"]
 
         self.split_rate = config["split_rate"]
-        self.window_scale = min(config["window_scale"], 2)
+        self.min_valid_scale = config["min_valid_scale"]
         self.window_sliding = config["window_sliding"]
 
         # Preprocess
@@ -111,7 +111,7 @@ class TIMEBANDDataset:
         self.origin_cols = origin_data.columns
         self.origin_data = torch.from_numpy(origin_data.to_numpy())
 
-        observed = data[self.targets][:self.observed_len].copy()
+        observed = data[self.targets][: self.observed_len].copy()
         self.observed = torch.from_numpy(observed.to_numpy())
         self.target_cols = self.targets
 
@@ -125,7 +125,7 @@ class TIMEBANDDataset:
         self.month_cat = self.onehot(data, self.month, self.timestamp.dt.month_name())
         self.weekday_cat = self.onehot(data, self.weekday, self.timestamp.dt.day_name())
         self.timestamp = data.index.strftime(self.index_format).tolist()
-        
+
         # Datashape
         self.encode_shape = (self.batch_size, self.observed_len, self.encode_dims)
         self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dims)
@@ -138,11 +138,10 @@ class TIMEBANDDataset:
         return data
 
     def load_dataset(self, k_step):
-        train_set, valid_set, preds_set = self.process(k_step)
+        train_set, valid_set = self.process(k_step)
 
         self.trainset = Dataset(train_set)
         self.validset = Dataset(valid_set)
-        self.predsset = Dataset(preds_set)
 
         # Feature info
         self.encode_dims = self.trainset.encoded.shape[2]
@@ -152,17 +151,17 @@ class TIMEBANDDataset:
         self.train_size = self.trainset.encoded.shape[0]
         self.valid_size = self.validset.encoded.shape[0]
         self.data_size = self.train_size + self.valid_size
-        logger.info(f"  - Encode dim : {self.encode_dims} // Decode dim {self.decode_dims}")
-        logger.info(f"  - Train size : {self.train_size} // Valid size {self.valid_size}")
-
-        return self.trainset, self.validset, self.predsset
+        logger.info(
+            f"  - Encode dim : {self.encode_dims} // Decode dim {self.decode_dims}"
+        )
+        logger.info(
+            f"  - Train size : {self.train_size} // Valid size {self.valid_size}"
+        )
+        return self.trainset, self.validset
 
     def process(self, k_step=0):
         data = self.data.copy(deep=True)
 
-        valid_minlen = int(self.window_scale * self.forecast_len)
-
-        # Timeseries K Sliding window
         if k_step <= self.window_sliding:
             data = data[: self.data_length - self.window_sliding + k_step]
 
@@ -177,17 +176,13 @@ class TIMEBANDDataset:
         self.minmax_scaler(data)
         data = self.normalize(data)
 
-
         # Timestamp information append
-        years = pd.Series(self.data.index.year.values, name="year", index=self.data.index)
-        years = 2 * ((years[:data_length] - years[0]) / (years[-1] - years[0])) - 1
         month = self.month_cat[:data_length]
         weekday = self.weekday_cat[:data_length]
 
-        data = pd.concat([data, years], axis=1)
         data = pd.concat([data, month], axis=1)
         data = pd.concat([data, weekday], axis=1)
-        
+
         # Encoded Split, Decoded Set split
         encode_data = data.copy()
         decode_data = data[self.targets].copy()
@@ -207,14 +202,14 @@ class TIMEBANDDataset:
             return dataset
 
         # Dataset
+        valid_minlen = int((self.min_valid_scale + 1) * self.forecast_len)
         split_idx = min(int(data_length * self.split_rate), data_length - valid_minlen)
 
-        train_set = get_dataset(idx_s=0, idx_e=split_idx - self.forecast_len)
-        valid_set = get_dataset(idx_s=split_idx, idx_e=-1)
-        preds_set = get_dataset(idx_s=-2 * self.forecast_len)
+        train_set = get_dataset(idx_e=split_idx - self.forecast_len)
+        valid_set = get_dataset(idx_s=split_idx - self.forecast_len)
 
         logger.info(f"Data len: {data_length}, Columns : {data.columns}")
-        return train_set, valid_set, preds_set
+        return train_set, valid_set
 
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
         observed = []
