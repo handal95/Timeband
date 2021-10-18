@@ -10,12 +10,12 @@
         "directory": "data",
         "data_name": "stock.sample",
 
-        "index_col": "date",
-        "index_format": "%Y-%m-%d",
-
-        "year": "year",
-        "month": "month",
-        "weekday": "weekday",
+        "time_index": "date",
+        "time_format": "%Y-%m-%d",
+        "time_encoding":{
+            "month": true,
+            "weekday": true
+        },
 
         "drops": [],
         "targets": ["open", "close"],

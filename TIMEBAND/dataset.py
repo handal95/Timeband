@@ -71,12 +71,11 @@ class TIMEBANDDataset:
         self.data_path = os.path.join(self.directory, self.data_name)
 
         # Columns
-        self.index_col = config["index_col"]
-        self.index_format = config["index_format"]
+        self.time_index = config["time_index"]
+        self.time_format = config["time_format"]
 
-        self.year = config["year"]
-        self.month = config["month"]
-        self.weekday = config["weekday"]
+        self.encoding_month = config["time_encoding"]["month"]
+        self.encoding_week = config["time_encoding"]["weekday"]
 
         self.drops = config["drops"]
         self.targets = config["targets"]
@@ -100,9 +99,9 @@ class TIMEBANDDataset:
         # Read csv data
         csv_path = f"{self.data_path}.csv"
         data = pd.read_csv(csv_path)
-        data[self.index_col] = self.parse_datetime(data[self.index_col])
+        data[self.time_index] = self.parse_datetime(data[self.time_index])
         data.drop(self.drops, axis=1, inplace=True)
-        data.set_index(self.index_col, inplace=True)
+        data.set_index(self.time_index, inplace=True)
         data.sort_index(ascending=True, inplace=True)
         data.index = pd.to_datetime(data.index)
 
@@ -122,16 +121,16 @@ class TIMEBANDDataset:
 
         # Keep Time information
         self.timestamp = data.index.to_series()
-        self.month_cat = self.onehot(data, self.month, self.timestamp.dt.month_name())
-        self.weekday_cat = self.onehot(data, self.weekday, self.timestamp.dt.day_name())
-        self.timestamp = data.index.strftime(self.index_format).tolist()
+        self.month_cat = self.onehot(data, self.encoding_month, self.timestamp.dt.month_name())
+        self.weekday_cat = self.onehot(data, self.encoding_week, self.timestamp.dt.day_name())
+        self.timestamp = data.index.strftime(self.time_format).tolist()
 
         # Datashape
         self.encode_shape = (self.batch_size, self.observed_len, self.encode_dims)
         self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dims)
 
         logger.info(f"  - File   : {csv_path}")
-        logger.info(f"  - Index  : {self.index_col}")
+        logger.info(f"  - Index  : {self.time_index}")
         logger.info(f"  - Length : {self.data_length}")
         logger.info(f"  - Target : {self.targets} ({self.decode_dims} cols)")
 
@@ -162,11 +161,8 @@ class TIMEBANDDataset:
     def process(self, k_step=0):
         data = self.data.copy(deep=True)
 
-        if k_step <= self.window_sliding:
-            data = data[: self.data_length - self.window_sliding + k_step]
-
-        # Keep Real Data
-        data_length = len(data)
+        data_len = self.data_length - self.window_sliding + k_step
+        data = data[: data_len] if k_step <= self.window_sliding else data
         decode_real = data[self.targets].copy(deep=True)
 
         # Preprocess
@@ -177,23 +173,25 @@ class TIMEBANDDataset:
         data = self.normalize(data)
 
         # Timestamp information append
-        month = self.month_cat[:data_length]
-        weekday = self.weekday_cat[:data_length]
+        if self.encoding_month:
+            month = self.month_cat[:data_len]
+            data = pd.concat([data, month], axis=1)
 
-        data = pd.concat([data, month], axis=1)
-        data = pd.concat([data, weekday], axis=1)
+        if self.encoding_week:
+            weekday = self.weekday_cat[:data_len]
+            data = pd.concat([data, weekday], axis=1)
 
         # Encoded Split, Decoded Set split
         encode_data = data.copy()
         decode_data = data[self.targets].copy()
 
         # Windowing data
-        stop = data_length - self.observed_len - self.forecast_len
+        stop = data_len - self.observed_len - self.forecast_len
         _, forecast = self.windowing(decode_real, stop)
         encoded, _ = self.windowing(encode_data, stop)
         _, decoded = self.windowing(decode_data, stop)
 
-        def get_dataset(idx_s: int = 0, idx_e: int = data_length) -> dict:
+        def get_dataset(idx_s: int = 0, idx_e: int = data_len) -> dict:
             dataset = {
                 "forecast": forecast[idx_s:idx_e],
                 "encoded": encoded[idx_s:idx_e],
@@ -202,13 +200,14 @@ class TIMEBANDDataset:
             return dataset
 
         # Dataset
-        valid_minlen = int((self.min_valid_scale + 1) * self.forecast_len)
-        split_idx = min(int(data_length * self.split_rate), data_length - valid_minlen)
+        valid_minlen = int((self.min_valid_scale) * self.forecast_len)
+        valid_idx = min(int(data_len * self.split_rate), data_len - valid_minlen)
+        split_idx = valid_idx - self.forecast_len - self.observed_len
 
-        train_set = get_dataset(idx_e=split_idx - self.forecast_len)
-        valid_set = get_dataset(idx_s=split_idx - self.forecast_len)
+        train_set = get_dataset(idx_e=split_idx)
+        valid_set = get_dataset(idx_s=split_idx)
 
-        logger.info(f"Data len: {data_length}, Columns : {data.columns}")
+        logger.info(f"Data len: {data_len}, Columns : {data.columns}")
         return train_set, valid_set
 
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
@@ -242,8 +241,8 @@ class TIMEBANDDataset:
             data[col][data[col] < pivot_min] = pivot_min
             data[col][data[col] > pivot_max] = pivot_max
 
-        self.encode_min = data.min(0) * 0.8
-        self.encode_max = data.max(0) * 1.1
+        self.encode_min = data.min(0) * (1 - min_p)
+        self.encode_max = data.max(0) * (1 + max_p)
 
         self.decode_min = torch.tensor(self.encode_min[self.targets])
         self.decode_max = torch.tensor(self.encode_max[self.targets])
