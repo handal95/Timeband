@@ -234,20 +234,20 @@ class TIMEBANDTrainer:
             losses["Score_raw"] += self.metric.NMAE(pred_y, real_y).detach().numpy()
             nme = self.metric.NME(pred_y * self.amplifier, real_y).detach().numpy()
 
-            if training and i > 20:
-                amplifier += nme * amplifier * (batchs / self.dataset.data_size) * 0.1
+            if training and i > 150:
+                amplifier += nme * amplifier * (batchs / self.dataset.data_length) * 0.1
 
             losses["NME"] += nme
             # Losses Log
             tqdm.set_description(loss_info(TAG, epoch, losses, i))
-            if not training:
-                self.dashboard.visualize(
-                    batchs,
-                    real_y,
-                    pred_y,
-                    self.pred_ans[-batchs - forecast_len :],
-                    self.pred_std[-batchs - forecast_len :],
-                )
+            # if not training:
+            self.dashboard.visualize(
+                batchs,
+                real_y,
+                pred_y,
+                self.pred_ans[-batchs - forecast_len :],
+                self.pred_std[-batchs - forecast_len :],
+            )
 
         if training:
             print(f"Amplifier {self.amplifier:2.5f}, {amplifier:2.5f}")

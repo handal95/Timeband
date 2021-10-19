@@ -66,6 +66,7 @@ class TIMEBANDModel:
                 logger.info(f" - Loaded netD : {netD_path}, netG: {netG_path}")
                 self.netD = torch.load(netD_path)
                 self.netG = torch.load(netG_path)
+                return
             else:
                 logger.warn("Pretrained models are not exists !")
                 
