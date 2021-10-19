@@ -1,20 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+from utils.color import COLORS
 from TIMEBAND.dataset import TIMEBANDDataset
 
 plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rc("font", family="Malgun Gothic")
 plt.rc("axes", unicode_minus=False)
-COLORS = [
-    "red", "green", "deepskyblue", "orange",
-    "blue", "purple", "peru", "wheat",
-    "lime", "aqua", "indigo", "pink",
-    "grey", "saddlebrown", "darkkhaki",
-    "olivedrab", "teal", "skyblue", "royalblue",
-    "pink", "silver", "yello", "darkseagreen", "violet",
-    "darkred"
-]
 
 
 class TIMEBANDDashboard:
@@ -27,20 +19,16 @@ class TIMEBANDDashboard:
         self.dataset = dataset
 
         self.observed = dataset.observed
-        self.target_cols = dataset.target_cols
+        self.target_cols = dataset.targets
         self.target_dims = len(self.target_cols)
 
-        self.timestamp = dataset.timestamp
+        self.timestamp = dataset.times
 
         self.observed_len = dataset.observed_len
         self.forecast_len = dataset.forecast_len
 
         # Figure and Axis
         self.fig, self.axes = None, None
-
-        # Data
-        self.preds = None
-        self.true_data = None
 
     def set_config(self, config: dict) -> None:
         """
@@ -67,7 +55,7 @@ class TIMEBANDDashboard:
         self.time_idx = 0
 
         # Config subplots
-        nrows = 2 # 2 + (self.target_dims - 1) // self.feats_by_rows
+        nrows = 2 + (self.target_dims - 1) // self.feats_by_rows
         ncols = 1
         size = (self.width, self.height)
 
@@ -144,7 +132,8 @@ class TIMEBANDDashboard:
                 for target_col in range(idx_s, idx_e):
                     feature_label = self.target_cols[target_col]
                     color = COLORS[target_col]
-                    ax.plot(true_ticks,
+                    ax.plot(
+                        true_ticks,
                         self.reals[SCOPE:PIVOT, target_col],
                         label=f"Real {feature_label}",
                         color=color,
@@ -156,16 +145,16 @@ class TIMEBANDDashboard:
                     )
                     ax.plot(
                         pred_ticks,
-                        self.preds[SCOPE : FRCST, target_col],
+                        self.preds[SCOPE:FRCST, target_col],
                         alpha=0.2,
                         linewidth=5,
                         color=color,
-                        label=f"Pred {feature_label}"
+                        label=f"Pred {feature_label}",
                     )
                     ax.fill_between(
                         pred_ticks,
-                        self.lower[SCOPE : FRCST, target_col],
-                        self.upper[SCOPE : FRCST, target_col],
+                        self.lower[SCOPE:FRCST, target_col],
+                        self.upper[SCOPE:FRCST, target_col],
                         label="Normal Band",
                         color=color,
                         alpha=0.2,
@@ -192,10 +181,10 @@ class TIMEBANDDashboard:
     def clear_figure(self) -> None:
         if self.visual is False:
             return
-            
+
         plt.close("all")
         plt.clf()
-        
+
         del self.std
         del self.preds
         del self.lower

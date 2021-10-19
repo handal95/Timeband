@@ -306,7 +306,7 @@ class TIMEBANDDataset:
 
         return pd.concat([data, encoded], axis=1)
 
-    def parse_datetime(self, data):
-        data = data.astype(str)
-        data = pd.to_datetime(data)
-        return data
+    def parse_datetime(self, time_index: pd.Series):
+        time_index = time_index.astype(str)
+        time_index = pd.to_datetime(time_index)
+        return time_index

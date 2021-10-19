@@ -40,8 +40,6 @@
         "model_tag": "sample",
         
         "load": true,
-        "load_interval": 25,
-
         "reload": true,
         "reload_interval": 15,
         
