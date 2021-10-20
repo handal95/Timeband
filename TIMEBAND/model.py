@@ -88,12 +88,13 @@ class TIMEBANDModel:
         netG_path = self.get_path("netG", postfix)
 
         try:
-            netD, netG = torch.load(netD_path), torch.load(netG_path)
+            self.netD, self.netG = torch.load(netD_path), torch.load(netG_path)
             logger.info(f" - Loaded netD : {netD_path}, netG: {netG_path}")
         except:
-            netD, netG = self.load()
+            logger.info(f" - Loaded Fail : {netD_path}, netG: {netG_path}")
+            self.netD, self.netG = self.load()
 
-        return netD, netG
+        return self.netD, self.netG
 
     def save(self, netD: NetD, netG: NetG, postfix: str = "") -> None:
         if self.save_option is False:
@@ -102,6 +103,7 @@ class TIMEBANDModel:
         netD_path = self.get_path("netD", postfix)
         netG_path = self.get_path("netG", postfix)
 
+        logger.info(f"*** MODEL IS SAVED ({postfix}) ***")
         torch.save(netD, netD_path)
         torch.save(netG, netG_path)
 
@@ -109,23 +111,24 @@ class TIMEBANDModel:
 
         if score < self.best_score:
             self.best_score = score
-            score_tag = f"{self.best_score:.4f}"
+            score_tag = f"{self.best_score:.3f}"
             logger.info(f"*** BEST SCORE MODEL ({score_tag}) IS SAVED ***")
 
+            self.netD, self.netG = netD, netG
             self.save(netD, netG, postfix=score_tag)
             self.reload_count = 0
-            return netD, netG
+            return self.netD, self.netG
 
         if self.reload_option is True:
             self.reload_count += 1
             if self.reload_count >= self.reload_interval:
-                score_tag = f"{self.best_score:.4f}"
+                score_tag = f"{self.best_score:.3f}"
                 logger.info(f"*** BEST SCORE MODEL ({score_tag}) IS RELOADED ***")
 
                 self.reload_count = 0
-                netD, netG = self.load(postfix=score_tag)
+                self.netD, self.netG = self.load(postfix=score_tag)
 
-        return netD, netG
+        return self.netD, self.netG
 
     def get_path(self, target: str, postfix: str = ""):
         filename = target if postfix == "" else f"{target}_{postfix}"

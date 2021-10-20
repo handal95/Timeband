@@ -53,18 +53,14 @@ def launcher():
     logger.info("- System  Setting -")
     logger.info("*********************")
 
-    seeding(31)
     with open("config.json", encoding="utf-8") as f:
         config = json.load(f)
     config = Parser(config).config
+    seeding(config["core"]["seed"])
 
     logger.info("*********************")
     logger.info("- Model Setting -")
     logger.info("*********************")
-    # Model setting
-    # - Timeband Dataset
-    # - Timeband Metric
-    # - Timeband Model
     model = TIMEBANDCore(config=config)
 
     logger.info("*********************")
@@ -76,8 +72,8 @@ def launcher():
         # Run Model Trainning
         netD, netG = model.train()
     except (KeyboardInterrupt, SyntaxError):
-        bestD, bestG = model.models.load(postfix=f"{model.models.best_score:.4f}")
-        # model.models.save(bestD, bestG)
+        bestD, bestG = model.models.load(postfix=f"{model.models.best_score:.3f}")
+        model.models.save(bestD, bestG)
         logger.warn("Abort!")
 
     logger.info("*********************")

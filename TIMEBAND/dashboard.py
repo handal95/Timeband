@@ -54,13 +54,12 @@ class TIMEBANDDashboard:
         self.time_idx = 0
 
         # Config subplots
-        nrows = 2 + (self.target_dims - 1) // self.feats_by_rows
+        nrows = 8 #  2 + (self.target_dims - 1) // self.feats_by_rows
         ncols = 1
         size = (self.width, self.height)
 
-        plt.title("주가 데이터 Dashboard")
-        fig, axes = plt.subplots(nrows, ncols, figsize=size, clear=True)
-        # fig.tight_layout()
+        fig, axes = plt.subplots(nrows, ncols, figsize=size, clear=True, sharex=True)
+        fig.tight_layout()
         # axes[0].set_title("TARGET FEATURES")
 
         for i, ax in enumerate(axes):
@@ -164,7 +163,6 @@ class TIMEBANDDashboard:
         plt.close("all")
         plt.clf()
 
-        del self.std
         del self.preds
         del self.lower
         del self.upper

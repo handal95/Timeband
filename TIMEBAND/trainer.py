@@ -112,7 +112,7 @@ class TIMEBANDTrainer:
             self.dashboard.clear_figure()
 
         best_score = models.best_score
-        netD_best, netG_best = models.load(postfix=f"{best_score:.4f}")
+        netD_best, netG_best = models.load(postfix=f"{best_score:.3f}")
         models.save(netD_best, netG_best)
         return self.netD, self.netG
 
@@ -158,6 +158,7 @@ class TIMEBANDTrainer:
             # Data
             true_x = data["encoded"].to(self.device)
             true_y = data["decoded"].to(self.device)
+            fake_y = generate(true_x)
 
             # #######################
             # Discriminator Training
@@ -166,7 +167,6 @@ class TIMEBANDTrainer:
             self.optimD.zero_grad()
             self.optimG.zero_grad()
 
-            fake_y = generate(true_x)
             Dx = discriminate(true_y)
             Dy = discriminate(fake_y)
 
@@ -186,10 +186,6 @@ class TIMEBANDTrainer:
             # #######################
             # Generator Trainining
             # #######################
-            # Optimizer initialize
-            # self.optimD.zero_grad()
-            # self.optimG.zero_grad()
-            
             fake_y = generate(true_x)
             Dy = self.netD(fake_y)
             errG_ = self.metric.GANloss(Dy, target_is_real=False)
@@ -217,27 +213,23 @@ class TIMEBANDTrainer:
             real_y = self.dataset.forecast[self.data_idx:self.data_idx + self.preds.shape[0]]
             self.data_idx += batchs
             
-            losses["Score"] += (
-                self.metric.NMAE(
-                    torch.from_numpy(self.preds) * self.amplifier,
-                    real_y,
-                )
-                .detach()
-                .numpy()
-            )
-            
+            losses["Score"] += self.metric.NMAE(self.preds, real_y).detach().numpy()
             losses["RMSE"] += self.metric.RMSE(self.preds, real_y).detach().numpy()
             losses["Score_raw"] += self.metric.NMAE(self.preds, real_y).detach().numpy()
             nme = self.metric.NME(self.preds * self.amplifier, real_y).detach().numpy()
             losses["NME"] += nme
 
-            if training and i > 150:
+            if training and i > 30:
                 amplifier += nme * amplifier * (batchs / self.dataset.data_length) * 0.1
 
             # Losses Log
             tqdm.set_description(loss_info(TAG, epoch, losses, i))
             if not training:
                 self.dashboard.visualize(batchs, real_y, self.preds, self.stds)
+
+        # if training:
+            # print(f"Amplifier {self.amplifier:2.5f}, {amplifier:2.5f}")
+            # self.amplifier = self.amplifier + (amplifier - self.amplifier) * 0.1
                 
         return losses["Score"] / (i + 1)
 
