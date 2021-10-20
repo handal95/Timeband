@@ -249,10 +249,6 @@ class TIMEBANDTrainer:
                 self.pred_std[-batchs - forecast_len :],
             )
 
-        if training:
-            print(f"Amplifier {self.amplifier:2.5f}, {amplifier:2.5f}")
-            self.amplifier = self.amplifier + (amplifier - self.amplifier) * 0.1
-
         return losses["Score"] / (i + 1)
 
     def pred_initate(self):

@@ -1,6 +1,25 @@
 # Timeband Release Notes
 ## **TIMEBAND 2.0** 
 Forecasting on **multivariable** Time Series data
+
+---
+
+### October 19, 2021 / v2.1
+#### New Features
+- Colored String options
+- CLI argument options
+- Timeband Dataset lightweight
+- Dataset lightweight
+
+#### Bug Fixes
+- Bugfix for model reloading option
+- Bugfix for Dashboard prediction lines
+
+- Introduction of encoder decoder architecture
+- Implement a predictive visualization dashboard
+
+---
+
 ### October 15, 2021 / v2.0 HOTFIX
 #### Bug Fixes
 - Fix initializing dashboard time index
