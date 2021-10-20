@@ -56,7 +56,6 @@ def launcher():
     seeding(31)
     with open("config.json", encoding="utf-8") as f:
         config = json.load(f)
-
     config = Parser(config).config
 
     logger.info("*********************")
@@ -77,13 +76,14 @@ def launcher():
         # Run Model Trainning
         netD, netG = model.train()
     except (KeyboardInterrupt, SyntaxError):
-        model.models.save(model.netD, model.netG)
+        bestD, bestG = model.models.load(postfix=f"{model.models.best_score:.4f}")
+        # model.models.save(bestD, bestG)
         logger.warn("Abort!")
 
     logger.info("*********************")
     logger.info("- Model Output -")
     logger.info("*********************")
-    model.run(netG)
+    # model.run(netG)
 
     logger.info("*********************")
     logger.info("- Data Visualize -")

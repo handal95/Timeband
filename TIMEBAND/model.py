@@ -69,7 +69,7 @@ class TIMEBANDModel:
                 return
             else:
                 logger.warn("Pretrained models are not exists !")
-                
+
         enc_dim = dims["encode"]
         dec_dim = dims["decode"]
 

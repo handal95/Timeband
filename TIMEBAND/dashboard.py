@@ -18,11 +18,10 @@ class TIMEBANDDashboard:
         self.time_idx = 0
         self.dataset = dataset
 
+        self.times = dataset.times
         self.observed = dataset.observed
         self.target_cols = dataset.targets
         self.target_dims = len(self.target_cols)
-
-        self.timestamp = dataset.times
 
         self.observed_len = dataset.observed_len
         self.forecast_len = dataset.forecast_len
@@ -70,50 +69,36 @@ class TIMEBANDDashboard:
             subplot_title = f"TIMEBAND-Band Feature {idx_s} to {idx_e}"
             ax.set_title(subplot_title)
 
+
+        self.reals = self.observed
+        self.preds = self.observed
+        self.lower = self.observed
+        self.upper = self.observed
+
         self.fig, self.axes = fig, axes
 
-    def visualize(self, batchs, real_data, pred, pred_data, std):
+    def visualize(self, batchs, real_data, preds, std):
         if self.visual is False:
             return
 
-        pred = pred.detach().numpy()
-        if not hasattr(self, "lower"):
-            zero_forecast = np.zeros(pred_data.shape)
-            empty_forecast = np.empty(pred_data.shape)
-
-            self.std = np.concatenate([np.zeros(self.observed.shape), zero_forecast])
-            self.reals = np.concatenate([self.observed, real_data[0, :-1], real_data[:, -1]])
-            self.preds = np.concatenate([self.observed, empty_forecast])
-            self.lower = self.preds.copy()
-            self.upper = self.preds.copy()
-        else:
-            empty_forecast = np.empty((batchs, self.target_dims))
-
-            self.std = np.concatenate([self.std, empty_forecast])
-            self.reals = np.concatenate([self.reals, real_data[:, -1]])
-            self.preds = np.concatenate([self.preds, empty_forecast])
-            self.lower = np.concatenate([self.lower, empty_forecast])
-            self.upper = np.concatenate([self.upper, empty_forecast])
-
-        update_idx = -pred_data.shape[0]
-        self.std[update_idx:] = std
-        self.preds[update_idx:] = pred_data
-        self.lower[update_idx:] = pred_data - self.std[update_idx:]
-        self.upper[update_idx:] = pred_data + self.std[update_idx:]
+        self.reals = np.concatenate([self.reals[:1-self.forecast_len], real_data])
+        self.preds = np.concatenate([self.preds[:1-self.forecast_len], preds])
+        self.lower = np.concatenate([self.lower[:1-self.forecast_len], preds - 2 * std])
+        self.upper = np.concatenate([self.upper[:1-self.forecast_len], preds + 2 * std])
 
         for batch in range(batchs):
             fig, axes = self.reset_figure()
             # 하단 그래프
-            SCOPE = max(0, self.time_idx - self.scope)
-            PIVOT = SCOPE + self.observed_len + min(self.scope, self.time_idx)
-            OBSRV = PIVOT - self.observed_len
-            FRCST = PIVOT + self.forecast_len
+            START = max(self.time_idx - self.scope, 0)
+            PIVOT = START + min(self.scope, self.time_idx)
+            OBSRV = PIVOT + self.observed_len
+            FRCST = OBSRV + self.forecast_len
 
-            xticks = np.arange(SCOPE, FRCST)
-            true_ticks = np.arange(SCOPE, PIVOT)
-            pred_ticks = np.arange(SCOPE, FRCST)
-            timelabel = [self.timestamp[x] for x in xticks]
-            target_col = 0
+            xticks = np.arange(START, FRCST + 1)
+            true_ticks = np.arange(START, OBSRV)
+            pred_ticks = np.arange(START, FRCST)
+            timelabel = [self.times[x] for x in xticks]
+            col = 0
             for i, ax in enumerate(axes):
                 ax.set_xticks(xticks[:: self.xinterval])
                 ax.set_xticklabels(timelabel[:: self.xinterval], rotation=30)
@@ -121,31 +106,25 @@ class TIMEBANDDashboard:
                 idx_s = i * self.feats_by_rows
                 idx_e = idx_s + min(self.target_dims - idx_s, self.feats_by_rows)
 
-                ax.axvline(SCOPE)
-                ax.axvline(PIVOT - 1)
-                ax.axvline(OBSRV - 1)
-                ax.axvline(FRCST + 1)
+                ax.axvline(START, color="black")
+                ax.axvline(PIVOT, color="blue")
+                ax.axvline(OBSRV - 1, color="red")
+                ax.axvline(FRCST - 1, color="black")
 
-                ax.axvspan(OBSRV - 1, PIVOT - 1, alpha=0.1, label="Observed window")
-                ax.axvspan(PIVOT - 1, FRCST, alpha=0.1, color="r", label="Forecast window")
+                ax.axvspan(PIVOT, OBSRV - 1, alpha=0.1, label="Observed")
+                ax.axvspan(OBSRV - 1, FRCST - 1, alpha=0.1, color="r", label="Forecast")
 
-                for target_col in range(idx_s, idx_e):
-                    feature_label = self.target_cols[target_col]
-                    color = COLORS[target_col]
+                for col in range(idx_s, idx_e):
+                    feature_label = self.target_cols[col]
+                    color = COLORS[col]
                     ax.plot(
                         true_ticks,
-                        self.reals[SCOPE:PIVOT, target_col],
-                        label=f"Real {feature_label}",
+                        self.reals[START:OBSRV, col],
                         color=color,
                     )
                     ax.plot(
                         pred_ticks,
-                        self.reals[SCOPE:FRCST, target_col],
-                        color=color,
-                    )
-                    ax.plot(
-                        pred_ticks,
-                        self.preds[SCOPE:FRCST, target_col],
+                        self.preds[START:FRCST, col],
                         alpha=0.2,
                         linewidth=5,
                         color=color,
@@ -153,13 +132,13 @@ class TIMEBANDDashboard:
                     )
                     ax.fill_between(
                         pred_ticks,
-                        self.lower[SCOPE:FRCST, target_col],
-                        self.upper[SCOPE:FRCST, target_col],
-                        label="Normal Band",
-                        color=color,
+                        self.lower[START:FRCST, col],
+                        self.upper[START:FRCST, col],
                         alpha=0.2,
+                        color=color,
+                        label="Normal Band",
                     )
-                    target_col += 1
+                    col += 1
                 ax.legend(loc="lower left")
                 ax.relim()
             self.time_idx += 1

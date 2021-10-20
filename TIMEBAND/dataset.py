@@ -11,7 +11,6 @@ logger = Logger(__file__)
 
 class Dataset:
     def __init__(self, dataset):
-        self.forecast = dataset["forecast"]
         self.encoded = dataset["encoded"]
         self.decoded = dataset["decoded"]
 
@@ -22,7 +21,6 @@ class Dataset:
 
     def __getitem__(self, idx):
         data = {
-            "forecast": torch.tensor(self.forecast[idx], dtype=torch.float32),
             "encoded": torch.tensor(self.encoded[idx], dtype=torch.float32),
             "decoded": torch.tensor(self.decoded[idx], dtype=torch.float32),
         }
@@ -121,8 +119,11 @@ class TIMEBANDDataset:
         data = self.onehot(data, times.dt.day_name()) if self.onehot_weekday else data
 
         # First observed
-        observed = data[self.targets][: self.observed_len].copy()
-        self.observed = torch.from_numpy(observed.to_numpy())
+        self.observed = data[self.targets][: self.observed_len + self.forecast_len].to_numpy()
+        self.observed = torch.from_numpy(self.observed)
+
+        self.forecast = data[self.targets][self.observed_len :].to_numpy()
+        self.forecast = torch.from_numpy(self.forecast)
 
         self.data_length = data.shape[0]
         self.encode_dim = len(data.columns)
@@ -132,7 +133,7 @@ class TIMEBANDDataset:
         self.encode_shape = (self.batch_size, self.observed_len, self.encode_dim)
         self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dim)
         self.dims = {"encode": self.encode_dim, "decode": self.decode_dim}
-        
+
         return data
 
     def load_dataset(self, k_step):
@@ -149,11 +150,9 @@ class TIMEBANDDataset:
         return self.trainset, self.validset
 
     def process(self, k_step=0):
-        data = self.data.copy(deep=True)
-
+        data = self.data
         data_len = self.data_length - self.window_sliding + k_step
         data = data[:data_len] if k_step <= self.window_sliding else data
-        decode_real = data[self.targets].copy(deep=True)
 
         # Preprocess
         if self.impute:
@@ -168,13 +167,11 @@ class TIMEBANDDataset:
 
         # Windowing data
         stop = data_len - self.observed_len - self.forecast_len
-        _, forecast = self.windowing(decode_real, stop)
         encoded, _ = self.windowing(encode_data, stop)
         _, decoded = self.windowing(decode_data, stop)
 
         def get_dataset(idx_s: int = 0, idx_e: int = data_len) -> dict:
             dataset = {
-                "forecast": forecast[idx_s:idx_e],
                 "encoded": encoded[idx_s:idx_e],
                 "decoded": decoded[idx_s:idx_e],
             }
@@ -308,5 +305,12 @@ class TIMEBANDDataset:
 
     def parse_datetime(self, time_index: pd.Series):
         time_index = time_index.astype(str)
+        # for i, time in enumerate(time_index):
+        #     timedata = time.split(".")
+        #     hh = int(timedata[0]) // 3600
+        #     mm = int(timedata[0]) // 60
+        #     ss = int(timedata[0]) % 60
+        #     ms = timedata[1].ljust(2, "0")
+        #     time_index[i] = f"21/01/01 {hh:02d}:{mm:02d}:{ss:02d}.{ms}"
         time_index = pd.to_datetime(time_index)
         return time_index
