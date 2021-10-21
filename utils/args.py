@@ -1,5 +1,4 @@
-# import os
-# import yaml
+import os
 import argparse
 from argparse import Namespace
 
@@ -45,6 +44,9 @@ class Parser:
         config["dashboard"]["visualize"] = parser.visualize
 
         config["dataset"]["batch_size"] = config["core"]["batch_size"]
+        config["models"]["directory"] = os.path.join(
+            config["models"]["directory"], config["dataset"]["data_name"]
+        )
 
         return config
 

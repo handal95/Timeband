@@ -119,7 +119,9 @@ class TIMEBANDDataset:
         data = self.onehot(data, times.dt.day_name()) if self.onehot_weekday else data
 
         # First observed
-        self.observed = data[self.targets][: self.observed_len + self.forecast_len].to_numpy()
+        self.observed = data[self.targets][
+            : self.observed_len + self.forecast_len
+        ].to_numpy()
         self.observed = torch.from_numpy(self.observed)
 
         self.forecast = data[self.targets][self.observed_len :].to_numpy()
@@ -161,14 +163,9 @@ class TIMEBANDDataset:
         self.minmax_scaler(data)
         data = self.normalize(data)
 
-        # Encoded Split, Decoded Set split
-        encode_data = data.copy()
-        decode_data = data[self.targets].copy()
-
         # Windowing data
         stop = data_len - self.observed_len - self.forecast_len
-        encoded, _ = self.windowing(encode_data, stop)
-        _, decoded = self.windowing(decode_data, stop)
+        encoded, decoded = self.windowing(data, stop)
 
         def get_dataset(idx_s: int = 0, idx_e: int = data_len) -> dict:
             dataset = {
@@ -191,11 +188,13 @@ class TIMEBANDDataset:
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
         observed = []
         forecast = []
+
+        y = x[self.targets]
         for i in range(0, stop, self.stride):
             j = i + self.observed_len
 
             observed.append(x[i : i + self.observed_len])
-            forecast.append(x[j : j + self.forecast_len])
+            forecast.append(y[j : j + self.forecast_len])
 
         observed = np.array(observed)
         forecast = np.array(forecast)

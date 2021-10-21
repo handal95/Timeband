@@ -70,10 +70,8 @@ def launcher():
     netG = None
     try:
         # Run Model Trainning
-        netD, netG = model.train()
+        model.train()
     except (KeyboardInterrupt, SyntaxError):
-        bestD, bestG = model.models.load(postfix=f"{model.models.best_score:.3f}")
-        model.models.save(bestD, bestG)
         logger.warn("Abort!")
 
     logger.info("*********************")

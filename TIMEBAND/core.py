@@ -55,10 +55,11 @@ class TIMEBANDCore:
 
         # Core configs
         self.mode = core["mode"]
+        self.pretrain = core["pretrain"]
 
         self.workers = core["workers"]
         self.batch_size = core["batch_size"]
-        self.seed = core["seed"]  # UNUSED
+        self.seed = core["seed"]
 
         # Configuration Categories
         self.dataset_cfg = config["dataset"]
@@ -68,8 +69,10 @@ class TIMEBANDCore:
         self.dashboard_cfg = config["dashboard"]
 
     def train(self) -> None:
-        # Model train
-        self.models.init_models(dims=self.dataset.dims)
+        if self.pretrain:
+            self.models.load("BEST")
+        self.models.initiate(dims=self.dataset.dims)
+
         self.trainer = TIMEBANDTrainer(
             self.trainer_cfg,
             self.dataset,
