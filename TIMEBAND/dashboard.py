@@ -54,7 +54,7 @@ class TIMEBANDDashboard:
         self.time_idx = 0
 
         # Config subplots
-        nrows = 2 + (self.target_dims - 1) // self.feats_by_rows
+        nrows = 4 # 2 + (self.target_dims - 1) // self.feats_by_rows
         ncols = 1
         size = (self.width, self.height)
 
@@ -82,10 +82,10 @@ class TIMEBANDDashboard:
         self.reals = np.concatenate([self.reals[: 1 - self.forecast_len], real_data])
         self.preds = np.concatenate([self.preds[: 1 - self.forecast_len], preds])
         self.lower = np.concatenate(
-            [self.lower[: 1 - self.forecast_len], preds - 2 * std]
+            [self.lower[: 1 - self.forecast_len], preds - 4 * std]
         )
         self.upper = np.concatenate(
-            [self.upper[: 1 - self.forecast_len], preds + 2 * std]
+            [self.upper[: 1 - self.forecast_len], preds + 4 * std]
         )
 
         for batch in range(batchs):

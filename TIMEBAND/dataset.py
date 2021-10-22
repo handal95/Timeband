@@ -147,12 +147,11 @@ class TIMEBANDDataset:
         # Feature info
         self.train_size = self.trainset.encoded.shape[0]
         self.valid_size = self.validset.encoded.shape[0]
-        self.data_length = self.train_size + self.valid_size
         logger.info(f"  - Train size : {self.train_size}, Valid size {self.valid_size}")
         return self.trainset, self.validset
 
     def process(self, k_step=0):
-        data = self.data
+        data = self.data.copy(deep=True)
         data_len = self.data_length - self.window_sliding + k_step
         data = data[:data_len] if k_step <= self.window_sliding else data
 

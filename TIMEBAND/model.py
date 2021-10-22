@@ -87,7 +87,7 @@ class TIMEBANDModel:
         if self.save_option:
             torch.save(self.netD, netD_path)
             torch.save(self.netG, netG_path)
-            
+
             if best:
                 best_netD_path = self.get_path("netD", "BEST")
                 best_netG_path = self.get_path("netG", "BEST")
@@ -96,7 +96,7 @@ class TIMEBANDModel:
                 postfix = f"Best({postfix})"
 
             logger.info(f"*** {postfix} MODEL IS SAVED ***")
-            
+
     def get_path(self, target: str, postfix: str = "") -> os.path:
         filename = target if postfix == "" else f"{target}_{postfix}"
         filepath = os.path.join(self.model_dir, f"{filename}.pth")
