@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
-from torch.optim import RMSprop
+from torch.optim import RMSprop, Adam
+from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
 from utils.logger import Logger
@@ -72,6 +73,67 @@ class TIMEBANDRunner:
         # Visual option
         self.print_cfg = config["print"]
 
+    def run(self, trainset: DataLoader, validset: DataLoader) -> None:
+        logger.info("Train the model")
+
+        # Prediction
+        self.data_idx = 0
+        self.pred_initate()
+
+        # Dashboard
+        self.dashboard.init_figure()
+
+        # Train Section
+        self.step(trainset)
+        self.step(validset)
+
+        # Dashboard
+        self.dashboard.clear_figure()
+
+        self.models.load("BEST")
+        self.models.save(best=True)
+        
+    def pred_initate(self):
+        decoded_shape = self.dataset.decode_shape
+        (batch_size, forecast_len, target_dims) = decoded_shape
+
+        init_shape3 = (forecast_len - 1, forecast_len, target_dims)
+        init_shape2 = (forecast_len - 1, target_dims)
+
+        # version v2.2
+        self.pred_data = np.empty(init_shape3)
+        self.pred_data[:] = np.nan
+
+        self.preds = np.empty(init_shape2)
+        self.preds[:] = np.nan
+
+        self.stds = np.zeros(init_shape2)
+
+    def predicts(self, pred):
+        (batch_size, forecast_len, target_dims) = pred.shape
+        pred = pred.detach().numpy()
+
+        nan_shape3 = np.empty((batch_size, forecast_len, target_dims))
+        nan_shape3[:] = np.nan
+        nan_shape2 = np.empty((batch_size, target_dims))
+        nan_shape2[:] = np.nan
+
+        self.pred_data = np.concatenate(
+            [self.pred_data[1 - forecast_len :], nan_shape3]
+        )
+        for f in range(forecast_len):
+            self.pred_data[f : batch_size + f, f] = pred[:, f]
+
+        self.preds = np.nanmedian(self.pred_data, axis=1)
+        self.stds = np.nanstd(self.pred_data, axis=1)
+
+        for f in range(forecast_len - 1, 0, -1):
+            gamma = (forecast_len - f) / (forecast_len - 1)
+            self.stds[-f] += self.stds[-f - 1] * gamma
+
+        for f in range(1, forecast_len):
+            self.stds[f] += self.stds[f - 1] * 0.1
+                    
     def inference(self, netG, dataset):
         logger.info("Predict the data")
 

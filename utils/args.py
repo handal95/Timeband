@@ -47,6 +47,8 @@ class Parser:
         config["models"]["directory"] = os.path.join(
             config["models"]["directory"], config["dataset"]["data_name"]
         )
+        
+        config["dataset"]["runner"] = config["runner"]
 
         return config
 

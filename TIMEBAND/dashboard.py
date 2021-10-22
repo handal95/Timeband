@@ -41,6 +41,7 @@ class TIMEBANDDashboard:
         # Data file configuration
         self.visual = config["visualize"]
         self.scope = config["scope"]
+        self.band_width = config["band_width"]
         self.feats_by_rows = config["features_by_rows"]
         self.xinterval = config["xinterval"]
 
@@ -54,12 +55,12 @@ class TIMEBANDDashboard:
         self.time_idx = 0
 
         # Config subplots
-        nrows = 4 # 2 + (self.target_dims - 1) // self.feats_by_rows
+        nrows = 2 # 2 + (self.target_dims - 1) // self.feats_by_rows
         ncols = 1
         size = (self.width, self.height)
 
         fig, axes = plt.subplots(nrows, ncols, figsize=size, clear=True, sharex=True)
-        fig.tight_layout()
+        # fig.tight_layout()
         # axes[0].set_title("TARGET FEATURES")
 
         for i, ax in enumerate(axes):
@@ -82,10 +83,10 @@ class TIMEBANDDashboard:
         self.reals = np.concatenate([self.reals[: 1 - self.forecast_len], real_data])
         self.preds = np.concatenate([self.preds[: 1 - self.forecast_len], preds])
         self.lower = np.concatenate(
-            [self.lower[: 1 - self.forecast_len], preds - 4 * std]
+            [self.lower[: 1 - self.forecast_len], preds - self.band_width * std]
         )
         self.upper = np.concatenate(
-            [self.upper[: 1 - self.forecast_len], preds + 4 * std]
+            [self.upper[: 1 - self.forecast_len], preds + self.band_width * std]
         )
 
         for batch in range(batchs):
@@ -145,6 +146,8 @@ class TIMEBANDDashboard:
                 ax.relim()
             self.time_idx += 1
             self.show_figure()
+
+
 
     def reset_figure(self):
         # Clear previous figure

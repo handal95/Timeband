@@ -99,7 +99,7 @@ class TIMEBANDLoss:
         self.errG_l2 += errl2
         self.errG_GP += errG_GP
 
-        return errG + errl1 + errl2
+        return errG + errl1 + errl2 + errG_GP
 
     def dis_loss(self, true, pred, Dy, DGx, critic: bool = False):
         if critic:

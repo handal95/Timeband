@@ -107,10 +107,11 @@ class TIMEBANDCore:
             self.device,
         )
 
-        _, _, predsset = self.dataset.load_dataset(0)
-        predsset = self.loader(predsset)
+        trainset, validset = self.dataset.load_dataset(0)
+        trainset = self.loader(trainset)
+        validset = self.loader(validset)
 
-        output = self.runner.inference(netG, predsset)
+        output = self.runner.inference(trainset, validset)
         output.to_csv(f"./outputs/output.csv", index=False)
 
     def visualize(self):

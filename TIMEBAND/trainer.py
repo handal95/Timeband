@@ -1,13 +1,12 @@
 import torch
 import numpy as np
-from torch.nn.modules import loss
 
 from tqdm import tqdm
-from torch.optim import RMSprop
+from torch.optim import RMSprop, Adam
 from torch.utils.data import DataLoader
 
-from utils.color import colorstr
 from utils.logger import Logger
+from utils.color import colorstr
 from TIMEBAND.loss import TIMEBANDLoss
 from TIMEBAND.model import TIMEBANDModel
 from TIMEBAND.metric import TIMEBANDMetric
@@ -71,6 +70,7 @@ class TIMEBANDTrainer:
 
         # FIXME Test config
         self.amplifier = config["amplifier"]
+        self.amplifier_scope = config["amplifier_scope"]
         self.print_verbose = config["print"]["verbose"]
         self.print_interval = config["print"]["interval"]
 
@@ -107,8 +107,8 @@ class TIMEBANDTrainer:
             # Model Settings
             paramD, lrD = self.models.netD.parameters(), self.lr * self.lr_gammaD
             paramG, lrG = self.models.netG.parameters(), self.lr * self.lr_gammaG
-            self.optimD = RMSprop(paramD, lr=lrD)
-            self.optimG = RMSprop(paramG, lr=lrG)
+            self.optimD = Adam(paramD, lr=lrD)
+            self.optimG = Adam(paramG, lr=lrG)
 
             # Prediction
             self.data_idx = 0
@@ -150,20 +150,22 @@ class TIMEBANDTrainer:
             # Critic & Optimizer init
             # #######################
             if training:
+                paramD, lrD = self.models.netD.parameters(), self.lr * self.lr_gammaD
+                optimD = RMSprop(paramD, lr=lrD)
                 for _ in range(self.iter_critic):
                     # Load Random Sample Data
                     true_x, true_y = self.dataset.get_random()
                     fake_y = generate(true_x)
 
                     # Optimizer initialize
-                    self.optimD.zero_grad()
+                    optimD.zero_grad()
 
                     Dy = discriminate(true_y)
                     DGx = discriminate(fake_y)
 
                     errD = self.losses.dis_loss(true_y, fake_y, Dy, DGx, critic=True)
                     errD.backward()
-                    self.optimD.step()
+                    optimD.step()
 
             self.optimD.zero_grad()
             self.optimG.zero_grad()
@@ -214,11 +216,11 @@ class TIMEBANDTrainer:
             ]
             self.data_idx += batchs
 
-            self.metric.SCORE(reals, preds.clone().detach())
-            self.metric.NMAE(reals, preds * self.amplifier)
+            self.metric.NMAE(reals, preds.clone().detach())
+            self.metric.SCORE(reals, preds * self.amplifier)
             self.metric.RMSE(reals, preds * self.amplifier)
             nme = self.metric.NME(reals, preds * self.amplifier)
-            if training and i > 20:
+            if training and i > self.amplifier_scope:
                 amplifier += nme * amplifier * (batchs / self.dataset.data_length) * 0.1
             
             losses = self.losses.loss(i)
@@ -231,7 +233,7 @@ class TIMEBANDTrainer:
 
         if training:
             self.amplifier = self.amplifier + (amplifier - self.amplifier) * 0.8
-        else:
+        elif (epoch + 1) % self.print_interval == 0:
             print(f"[ Amplifier ] {self.amplifier:2.5f}")
 
         return self.metric.nmae / (i + 1)
@@ -274,6 +276,8 @@ class TIMEBANDTrainer:
             gamma = (forecast_len - f) / (forecast_len - 1)
             self.stds[-f] += self.stds[-f - 1] * gamma
 
+        for f in range(1, forecast_len):
+            self.stds[f] += self.stds[f - 1] * 0.1
 
 def desc(training, epoch, score, losses):
     process = "Train" if training else "Valid"

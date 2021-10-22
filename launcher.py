@@ -56,8 +56,22 @@ def launcher():
     with open("config.json", encoding="utf-8") as f:
         config = json.load(f)
     config = Parser(config).config
-    seeding(config["core"]["seed"])
+    
+    
+    directory, model_tag = config["models"]["directory"], config["models"]["model_tag"]
+    os.mkdir(directory) if not os.path.exists(directory) else None
+    model_path = os.path.join(directory, model_tag)
+    os.mkdir(model_path) if not os.path.exists(model_path) else None
+    config_path = os.path.join(model_path, "config.json")
+    with open(config_path, "w",  encoding="utf-8") as f:
+        json.dump(config, f)
 
+    
+    seeding(config["core"]["seed"])
+    logger.info("*********************")
+    logger.info(f"- {model_tag} -")
+    logger.info("*********************")
+    
     logger.info("*********************")
     logger.info("- Model Setting -")
     logger.info("*********************")

@@ -6,6 +6,7 @@ class TIMEBANDMetric:
     def __init__(self, device: torch.device) -> None:
         self.device = device
         self.mse = nn.MSELoss().to(device)
+        self.esp = 1e-7
         self.init_score()
 
     def init_score(self):
@@ -18,7 +19,7 @@ class TIMEBANDMetric:
     def NME(self, true: torch.tensor, pred: torch.tensor):
         true, pred = self._ignore_zero(true, pred)
 
-        normalized_error = (true - pred) / true
+        normalized_error = (true - pred) / (self.esp + true)
         normalized_mean_error = torch.mean(normalized_error)
         nme_score = normalized_mean_error.detach().numpy()
 
@@ -28,7 +29,7 @@ class TIMEBANDMetric:
     def SCORE(self, true: torch.tensor, pred: torch.tensor):
         true, pred = self._ignore_zero(true, pred)
 
-        normalized_error = (true - pred) / true
+        normalized_error = (true - pred) / (self.esp + true)
         normalized_abs_error = torch.abs(normalized_error)
         normalized_mean_abs_error = torch.mean(normalized_abs_error)
         nmae_score = normalized_mean_abs_error.detach().numpy()
@@ -39,7 +40,7 @@ class TIMEBANDMetric:
     def NMAE(self, true: torch.tensor, pred: torch.tensor):
         true, pred = self._ignore_zero(true, pred)
 
-        normalized_error = (true - pred) / true
+        normalized_error = (true - pred) / (self.esp + true)
         normalized_abs_error = torch.abs(normalized_error)
         normalized_mean_abs_error = torch.mean(normalized_abs_error)
         nmae_score = normalized_mean_abs_error.detach().numpy()
@@ -50,7 +51,7 @@ class TIMEBANDMetric:
     def RMSE(self, true: torch.tensor, pred: torch.tensor):
         true, pred = self._ignore_zero(true, pred)
 
-        mean_squared_error = self.mse(true, pred) + 1e-8
+        mean_squared_error = self.mse(true, pred) + self.esp
         root_mean_squared_error = torch.sqrt(mean_squared_error)
         rmse_score = root_mean_squared_error.detach().numpy()
 
