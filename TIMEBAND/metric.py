@@ -1,78 +1,73 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 
 
 class TIMEBANDMetric:
-    def __init__(self, config, device):
-        self.set_config(config)
+    def __init__(self, device: torch.device) -> None:
         self.device = device
-        self.criterion_l1n = nn.SmoothL1Loss().to(self.device)
-        self.criterion_l2n = nn.MSELoss().to(self.device)
-        self.criterion_adv = GANLoss(real_label=0.9, fake_label=0.1).to(self.device)
+        self.mse = nn.MSELoss().to(device)
+        self.init_score()
 
-    def set_config(self, config):
-        self.zero_ignoring = config["zero_ignoring"]
-        self.gp_weight = config["gp_weight"]
-        self.l1_weight = config["l1_weight"]
-        self.l2_weight = config["l2_weight"]
+    def init_score(self):
+        self.scoree = 0
+        self.nme = 0
+        self.nmae = 0
+        self.rmse = 0
+        return self.score()
 
-    def GANloss(self, D, target_is_real):
-        return self.criterion_adv(D, target_is_real)
+    def NME(self, true: torch.tensor, pred: torch.tensor):
+        true, pred = self._ignore_zero(true, pred)
 
-    def RMSE(self, pred, true):
-        pred, true = self._ignore_zero(pred, true)
-        return torch.mean(torch.sqrt(torch.square(true - pred)))
+        normalized_error = (true - pred) / true
+        normalized_mean_error = torch.mean(normalized_error)
+        nme_score = normalized_mean_error.detach().numpy()
 
-    def NME(self, pred, true):
-        pred, true = self._ignore_zero(pred, true)
-        return torch.mean((true - pred) / (true))
+        self.nme += nme_score
+        return nme_score
+    
+    def SCORE(self, true: torch.tensor, pred: torch.tensor):
+        true, pred = self._ignore_zero(true, pred)
 
-    def NMAE(self, pred, true):
-        pred, true = self._ignore_zero(pred, true)
-        return torch.mean(torch.abs(true - pred) / (true))
+        normalized_error = (true - pred) / true
+        normalized_abs_error = torch.abs(normalized_error)
+        normalized_mean_abs_error = torch.mean(normalized_abs_error)
+        nmae_score = normalized_mean_abs_error.detach().numpy()
 
-    def l1loss(self, pred, true):
-        pred, true = self._ignore_zero(pred, true)
-        return self.l1_weight * self.criterion_l1n(pred, true)
+        self.scoree += nmae_score
+        return nmae_score
+    
+    def NMAE(self, true: torch.tensor, pred: torch.tensor):
+        true, pred = self._ignore_zero(true, pred)
 
-    def l2loss(self, pred, true):
-        pred, true = self._ignore_zero(pred, true)
-        return self.l2_weight * self.criterion_l2n(pred, true)
+        normalized_error = (true - pred) / true
+        normalized_abs_error = torch.abs(normalized_error)
+        normalized_mean_abs_error = torch.mean(normalized_abs_error)
+        nmae_score = normalized_mean_abs_error.detach().numpy()
 
-    def grad_penalty(self, pred, true):
-        pred, true = self._ignore_zero(pred, true)
-        return self.gp_weight * self._grad_penalty(pred, true)
+        self.nmae += nmae_score
+        return nmae_score
 
-    def _ignore_zero(self, pred, true):
-        if self.zero_ignoring:
-            target = torch.where(true != 0)
-            pred = pred[target]
-            true = true[target]
-        return pred, true
+    def RMSE(self, true: torch.tensor, pred: torch.tensor):
+        true, pred = self._ignore_zero(true, pred)
 
-    def _grad_penalty(self, pred, true):
-        gradients = pred - true
-        gradients_sqr = torch.square(gradients)
-        gradients_sqr_sum = torch.sum(gradients_sqr)
-        gradients_l2_norm = torch.sqrt(gradients_sqr_sum)
-        gradients_penalty = torch.square(1 - gradients_l2_norm) / true.size(0)
-        return gradients_penalty
+        mean_squared_error = self.mse(true, pred) + 1e-8
+        root_mean_squared_error = torch.sqrt(mean_squared_error)
+        rmse_score = root_mean_squared_error.detach().numpy()
 
+        self.rmse += rmse_score
+        return rmse_score
 
-class GANLoss(nn.Module):
-    def __init__(self, real_label=0.9, fake_label=0.1):
-        super(GANLoss, self).__init__()
-        self.register_buffer("none_label", torch.tensor(0.5))
-        self.register_buffer("real_label", torch.tensor(real_label))
-        self.register_buffer("fake_label", torch.tensor(fake_label))
-        self.loss = nn.MSELoss()
+    def _ignore_zero(self, true: torch.tensor, pred: torch.tensor):
+        target = torch.where(true != 0)
+        true = true[target]
+        pred = pred[target]
+        return true, pred
 
-    def get_target_tensor(self, input, target_is_real):
-        target_tensor = self.real_label if target_is_real else self.fake_label
-        return target_tensor.expand_as(input)
-
-    def __call__(self, input, target_is_real):
-        target_tensor = self.get_target_tensor(input, target_is_real)
-        target_tensor = target_tensor.to(input.device)
-        return self.loss(input, target_tensor)
+    def score(self, i: int = 0):
+        score = {
+            "SCORE": f"{self.scoree / (i + 1): 7.5f}",
+            "NME": f"{self.nme  / (i + 1):6.3f}",
+            "NMAE": f"{self.nmae / (i + 1):7.5f}",
+            "RMSE": f"{self.rmse / (i + 1):6.2f}",
+        }
+        return score

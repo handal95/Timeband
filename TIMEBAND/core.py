@@ -2,6 +2,7 @@ from utils.logger import Logger
 from utils.device import init_device
 
 from torch.utils.data import DataLoader
+from TIMEBAND.loss import TIMEBANDLoss
 from TIMEBAND.model import TIMEBANDModel
 from TIMEBAND.metric import TIMEBANDMetric
 from TIMEBAND.dataset import TIMEBANDDataset
@@ -27,16 +28,15 @@ class TIMEBANDCore:
         # Set Config
         self.set_config(config=config)
 
-        # Dataset option
+        # Dataset & Model Settings
         self.dataset = TIMEBANDDataset(self.dataset_cfg, self.device)
-
-        # Model option
         self.models = TIMEBANDModel(self.models_cfg, self.device)
 
-        # Metric option
-        self.metric = TIMEBANDMetric(self.metric_cfg, self.device)
+        # Losses and Metric Settings
+        self.metric = TIMEBANDMetric(self.device)
+        self.losses = TIMEBANDLoss(self.losses_cfg, self.device)
 
-        # Visualize option
+        # Visualize Settings
         self.dashboard = TIMEBANDDashboard(self.dashboard_cfg, self.dataset)
 
     def init_dataset(self):
@@ -64,13 +64,11 @@ class TIMEBANDCore:
         # Configuration Categories
         self.dataset_cfg = config["dataset"]
         self.models_cfg = config["models"]
-        self.metric_cfg = config["metric"]
+        self.losses_cfg = config["losses"]
         self.trainer_cfg = config["trainer"]
         self.dashboard_cfg = config["dashboard"]
 
     def train(self) -> None:
-        if self.pretrain:
-            self.models.load("BEST")
         self.models.initiate(dims=self.dataset.dims)
 
         self.trainer = TIMEBANDTrainer(
@@ -78,6 +76,7 @@ class TIMEBANDCore:
             self.dataset,
             self.models,
             self.metric,
+            self.losses,
             self.dashboard,
             self.device,
         )
@@ -85,17 +84,18 @@ class TIMEBANDCore:
         for k in range(self.dataset.window_sliding + 1):
             logger.info(f"Run ({k + 1}/{self.dataset.window_sliding + 1})")
 
+            if self.pretrain:
+                self.models.load("BEST")
+
             # Dataset
             trainset, validset = self.dataset.load_dataset(k + 1)
             trainset = self.loader(trainset)
             validset = self.loader(validset)
 
             # Model
-            netD, netG = self.trainer.train(trainset, validset)
+            self.trainer.train(trainset, validset)
 
             logger.info(f"Done ({k + 1}/{self.dataset.window_sliding + 1}) ")
-
-        return netD, netG
 
     def run(self, netG=None):
         self.runner = TIMEBANDRunner(
