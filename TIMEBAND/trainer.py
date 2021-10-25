@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import pandas as pd
 
 from tqdm import tqdm
 from torch.optim import RMSprop, Adam
@@ -13,7 +14,7 @@ from TIMEBAND.metric import TIMEBANDMetric
 from TIMEBAND.dataset import TIMEBANDDataset
 from TIMEBAND.dashboard import TIMEBANDDashboard
 
-logger = Logger(__file__)
+logger = None
 
 
 class TIMEBANDTrainer:
@@ -25,10 +26,9 @@ class TIMEBANDTrainer:
         metric: TIMEBANDMetric,
         losses: TIMEBANDLoss,
         dashboard: TIMEBANDDashboard,
-        device: torch.device,
     ) -> None:
-        # Set device
-        self.device = device
+        global logger
+        logger = config["logger"]
 
         self.dataset = dataset
         self.models = models
@@ -51,6 +51,10 @@ class TIMEBANDTrainer:
         """
 
         # Train option
+        self.__dict__ = {
+            **config,
+            **self.__dict__,
+        }
         self.lr = config["learning_rate"]["base"]
         self.lr_decay = config["learning_rate"]["decay"]
         self.lr_gammaG = config["learning_rate"]["gammaG"]
@@ -175,6 +179,8 @@ class TIMEBANDTrainer:
             # #######################
             true_x = data["encoded"].to(self.device)
             true_y = data["decoded"].to(self.device)
+            mask_y = data["missing"].to(self.device)
+            
             (batchs, forecast_len, target_dims) = true_y.shape
 
             # #######################
@@ -183,6 +189,8 @@ class TIMEBANDTrainer:
             fake_y = generate(true_x)
             Dy = discriminate(true_y)
             DGx = discriminate(fake_y)
+            
+            # true_y = (1 - mask_y) * true_y + mask_y * fake_y
             if training:
                 errD = self.losses.dis_loss(true_y, fake_y, Dy, DGx)
                 errD.backward()
@@ -196,6 +204,8 @@ class TIMEBANDTrainer:
             # #######################
             fake_y = generate(true_x)
             DGx = self.models.netD(fake_y)
+
+            # true_y = (1 - mask_y) * true_y + mask_y * fake_y
             if training:
                 errG = self.losses.gen_loss(true_y, fake_y, DGx)
                 errG.backward()
@@ -214,22 +224,29 @@ class TIMEBANDTrainer:
             reals = self.dataset.forecast[
                 self.data_idx : self.data_idx + preds.shape[0]
             ]
+            masks = torch.tensor(self.dataset.missing[
+                self.data_idx : self.data_idx + preds.shape[0]
+            ])
+            
+            outputs = (1 - masks) * reals + masks * preds
             self.data_idx += batchs
 
-            self.metric.NMAE(reals, preds.clone().detach())
-            self.metric.SCORE(reals, preds * self.amplifier)
-            self.metric.RMSE(reals, preds * self.amplifier)
-            nme = self.metric.NME(reals, preds * self.amplifier)
+            self.metric.NMAE(reals, preds)
+            self.metric.SCORE(outputs, preds.clone().detach())
+            self.metric.RMSE(outputs, preds)
+            nme = self.metric.NME(outputs, preds * self.amplifier)
             if training and i > self.amplifier_scope:
-                amplifier += nme * amplifier * (batchs / self.dataset.data_length) * 0.1
-            
+                amplifier += nme * amplifier * (batchs / self.dataset.data_length) * 0.01
+
             losses = self.losses.loss(i)
             score = self.metric.score(i)
 
             # Losses Log
             tqdm_.set_description(desc(training, epoch, score, losses))
             # if not training:
-            self.dashboard.visualize(batchs, reals, self.preds * self.amplifier, self.stds)
+            self.dashboard.train_vis(
+                batchs, reals, self.preds * self.amplifier, self.stds, outputs
+            )
 
         if training:
             self.amplifier = self.amplifier + (amplifier - self.amplifier) * 0.8
@@ -279,16 +296,17 @@ class TIMEBANDTrainer:
         for f in range(1, forecast_len):
             self.stds[f] += self.stds[f - 1] * 0.1
 
+
 def desc(training, epoch, score, losses):
     process = "Train" if training else "Valid"
 
     if not training:
-        score["SCORE"] = colorstr("bright_red", score["SCORE"]) 
-        score["RMSE"] = colorstr("bright_blue", score["RMSE"]) 
-        score["NMAE"] = colorstr("bright_red", score["NMAE"])  
-        losses["L1"] = colorstr("bright_blue", losses["L1"])   
-        losses["L2"] = colorstr("bright_blue", losses["L2"])   
-        losses["GP"] = colorstr("bright_blue", losses["GP"])   
+        score["SCORE"] = colorstr("bright_red", score["SCORE"])
+        score["RMSE"] = colorstr("bright_blue", score["RMSE"])
+        score["NMAE"] = colorstr("bright_red", score["NMAE"])
+        losses["L1"] = colorstr("bright_blue", losses["L1"])
+        losses["L2"] = colorstr("bright_blue", losses["L2"])
+        losses["GP"] = colorstr("bright_blue", losses["GP"])
 
     return (
         f"[{process} e{epoch + 1:4d}] "

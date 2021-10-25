@@ -1,3 +1,4 @@
+import torch
 from utils.logger import Logger
 from utils.device import init_device
 
@@ -10,7 +11,7 @@ from TIMEBAND.trainer import TIMEBANDTrainer
 from TIMEBAND.runner import TIMEBANDRunner
 from TIMEBAND.dashboard import TIMEBANDDashboard
 
-logger = Logger(__file__)
+logger = None
 
 
 class TIMEBANDCore:
@@ -22,51 +23,49 @@ class TIMEBANDCore:
     """
 
     def __init__(self, config: dict) -> None:
-        # Set device
-        self.device = init_device()
 
         # Set Config
         self.set_config(config=config)
 
         # Dataset & Model Settings
-        self.dataset = TIMEBANDDataset(self.dataset_cfg, self.device)
-        self.models = TIMEBANDModel(self.models_cfg, self.device)
+        self.dataset = TIMEBANDDataset(self.dataset_cfg)
+        self.models = TIMEBANDModel(self.models_cfg)
 
         # Losses and Metric Settings
-        self.metric = TIMEBANDMetric(self.device)
-        self.losses = TIMEBANDLoss(self.losses_cfg, self.device)
+        self.metric = TIMEBANDMetric(self.metric_cfg)
+        self.losses = TIMEBANDLoss(self.losses_cfg)
 
         # Visualize Settings
         self.dashboard = TIMEBANDDashboard(self.dashboard_cfg, self.dataset)
-
-    def init_dataset(self):
-        self.dataset = TIMEBANDDataset(self.dataset_cfg, self.device)
 
     def set_config(self, config: dict) -> None:
         """
         Setting configuration
 
-        If config/config.json is not exists,
-        Use default config 'config.yml'
         """
-        logger.info("  Config : config settings")
-
-        core = config["core"]
-
-        # Core configs
-        self.mode = core["mode"]
-        self.pretrain = core["pretrain"]
-
-        self.workers = core["workers"]
-        self.batch_size = core["batch_size"]
-        self.seed = core["seed"]
+        # Set Logger
+        global logger
+        logger = config["core"]["logger"]
+        config["core"]["targets_dims"] = len(config["dataset"]["targets"])
 
         # Configuration Categories
-        self.dataset_cfg = config["dataset"]
-        self.models_cfg = config["models"]
-        self.losses_cfg = config["losses"]
-        self.trainer_cfg = config["trainer"]
-        self.dashboard_cfg = config["dashboard"]
+        self.__dict__ = {**config["core"], **self.__dict__}
+        self.dataset_cfg = {**config["core"], **config["dataset"]}
+        self.models_cfg = {**config["core"], **config["models"]}
+        self.metric_cfg = {**config["core"], **config["dataset"]}
+        self.losses_cfg = {**config["core"], **config["losses"]}
+        self.trainer_cfg = {**config["core"], **config["trainer"]}
+        self.dashboard_cfg = {**config["core"], **config["dashboard"]}
+        self.runner_cfg = {**config["core"], **config["runner"]}
+
+    def init_device(self):
+        """
+        Setting device CUDNN option
+
+        """
+        # TODO : Using parallel GPUs options
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        return torch.device(device)
 
     def train(self) -> None:
         self.models.initiate(dims=self.dataset.dims)
@@ -78,40 +77,42 @@ class TIMEBANDCore:
             self.metric,
             self.losses,
             self.dashboard,
-            self.device,
         )
 
-        for k in range(self.dataset.window_sliding + 1):
-            logger.info(f"Run ({k + 1}/{self.dataset.window_sliding + 1})")
+        for k in range(self.dataset.sliding_step + 1):
+            logger.info(f"Train ({k + 1}/{self.dataset.sliding_step})")
 
             if self.pretrain:
                 self.models.load("BEST")
 
             # Dataset
-            trainset, validset = self.dataset.load_dataset(k + 1)
-            trainset = self.loader(trainset)
-            validset = self.loader(validset)
+            trainset, validset = self.dataset.prepare_dataset(k + 1)
+            trainset, validset = self.loader(trainset), self.loader(validset)
 
             # Model
             self.trainer.train(trainset, validset)
 
-            logger.info(f"Done ({k + 1}/{self.dataset.window_sliding + 1}) ")
+            logger.info(f"Done ({k + 1}/{self.dataset.sliding_step + 1}) ")
 
-    def run(self, netG=None):
+    def run(self):
+        self.models.initiate(dims=self.dataset.dims)
+        if self.pretrain:
+            self.models.load("BEST")
         self.runner = TIMEBANDRunner(
-            self.trainer_cfg,
+            self.runner_cfg,
             self.dataset,
             self.models,
+            self.losses,
             self.metric,
             self.dashboard,
             self.device,
         )
 
-        trainset, validset = self.dataset.load_dataset(0)
-        trainset = self.loader(trainset)
-        validset = self.loader(validset)
+        self.batch_size = 1
+        dataset = self.dataset.prepare_testset(0, split=False)
+        dataset = self.loader(dataset)
 
-        output = self.runner.inference(trainset, validset)
+        output = self.runner.run(dataset)
         output.to_csv(f"./outputs/output.csv", index=False)
 
     def visualize(self):

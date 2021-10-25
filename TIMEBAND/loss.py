@@ -53,14 +53,12 @@ class GANLoss(nn.Module):
 
 
 class TIMEBANDLoss:
-    def __init__(self, config: dict, device: torch.device):
-
+    def __init__(self, config: dict):
+        # Set configuration
         self.set_config(config)
 
-        # Metric
-        self.device = device
-
         # Critetion
+        device = self.device
         self.criterion_l1n = nn.SmoothL1Loss().to(device)
         self.criterion_l2n = nn.MSELoss().to(device)
         self.criterion_adv = GANLoss(real_label=0.9, fake_label=0.1).to(device)
@@ -70,9 +68,14 @@ class TIMEBANDLoss:
         self.init_loss()
 
     def set_config(self, config: dict):
-        self.l1_weight = config["l1_weight"]
-        self.l2_weight = config["l2_weight"]
-        self.gp_weight = config["gp_weight"]
+        """
+        Configure settings related to the data set.
+
+        params:
+            config: Dataset configuration dict
+                `config['core'] & config['dataset']`
+        """
+        self.__dict__ = {**config, **self.__dict__}
 
     def init_loss(self):
         # Discriminator loss

@@ -28,6 +28,14 @@ class TIMEBANDDashboard:
 
         # Figure and Axis
         self.fig, self.axes = None, None
+        global logger
+        logger = config["logger"]
+        
+        logger.info(
+            f"\n  Dashboard: \n"
+            f"  - visualize : {self.visualize_opt} \n",
+            level=0,
+        )
 
     def set_config(self, config: dict) -> None:
         """
@@ -39,28 +47,22 @@ class TIMEBANDDashboard:
         """
 
         # Data file configuration
-        self.visual = config["visualize"]
-        self.scope = config["scope"]
-        self.band_width = config["band_width"]
-        self.feats_by_rows = config["features_by_rows"]
-        self.xinterval = config["xinterval"]
-
-        self.height = config["height"]
-        self.width = config["width"]
+        self.__dict__ = {**config, **self.__dict__}
 
     def init_figure(self) -> tuple:
-        if self.visual is False:
+        if self.visualize_opt is False:
             return
 
         self.time_idx = 0
 
         # Config subplots
-        nrows = 2 # 2 + (self.target_dims - 1) // self.feats_by_rows
+        nrows = 3  # 2 + (self.target_dims - 1) // self.feats_by_rows
         ncols = 1
         size = (self.width, self.height)
 
         fig, axes = plt.subplots(nrows, ncols, figsize=size, clear=True, sharex=True)
         # fig.tight_layout()
+
         # axes[0].set_title("TARGET FEATURES")
 
         for i, ax in enumerate(axes):
@@ -73,11 +75,12 @@ class TIMEBANDDashboard:
         self.preds = self.observed
         self.lower = self.observed
         self.upper = self.observed
+        self.output = self.observed
 
         self.fig, self.axes = fig, axes
 
-    def visualize(self, batchs, real_data, preds, std):
-        if self.visual is False:
+    def train_vis(self, batchs, real_data, preds, std, output=None):
+        if self.visualize_opt is False:
             return
 
         self.reals = np.concatenate([self.reals[: 1 - self.forecast_len], real_data])
@@ -88,6 +91,8 @@ class TIMEBANDDashboard:
         self.upper = np.concatenate(
             [self.upper[: 1 - self.forecast_len], preds + self.band_width * std]
         )
+        if output is not None:
+            self.output = np.concatenate([self.output[: 1 - self.forecast_len], output])
 
         for batch in range(batchs):
             fig, axes = self.reset_figure()
@@ -120,10 +125,17 @@ class TIMEBANDDashboard:
                 for col in range(idx_s, idx_e):
                     feature_label = self.target_cols[col]
                     color = COLORS[col]
+
+                    ax.plot(
+                        true_ticks,
+                        self.output[START:OBSRV, col],
+                        color="black",
+                    )
                     ax.plot(
                         true_ticks,
                         self.reals[START:OBSRV, col],
                         color=color,
+                        label=f"Real {feature_label}",
                     )
                     ax.plot(
                         pred_ticks,
@@ -147,8 +159,6 @@ class TIMEBANDDashboard:
             self.time_idx += 1
             self.show_figure()
 
-
-
     def reset_figure(self):
         # Clear previous figure
         for i in range(len(self.axes)):
@@ -163,7 +173,7 @@ class TIMEBANDDashboard:
         self.fig.canvas.flush_events()
 
     def clear_figure(self) -> None:
-        if self.visual is False:
+        if self.visualize_opt is False:
             return
 
         plt.close("all")

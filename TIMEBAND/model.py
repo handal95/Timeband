@@ -5,7 +5,7 @@ from utils.logger import Logger
 from .utils.lstm_layer import LSTMGenerator as NetG
 from .utils.lstm_layer import LSTMDiscriminator as NetD
 
-logger = Logger(__file__)
+logger = None
 
 
 class TIMEBANDModel:
@@ -14,7 +14,7 @@ class TIMEBANDModel:
 
     """
 
-    def __init__(self, config: dict, device: torch.device) -> None:
+    def __init__(self, config: dict) -> None:
         """
         TIMEBAND Dataset
 
@@ -22,16 +22,23 @@ class TIMEBANDModel:
             config: Dataset configuration dict
             device: Torch device (cpu / cuda:0)
         """
-        logger.info("  Model: ")
+        global logger
+        logger = config["logger"]
 
         # Set Config
         self.set_config(config)
 
-        # Set device
-        self.device = device
-
         self.netD = None
         self.netG = None
+
+        logger.info(
+            "\n  Model: \n"
+            f"  - File path  : {self.models_path} \n"
+            f"  - Pretrained : {self.pretrain} \n"
+            f"  - Save opts  : {self.save_opt} \n"
+            f"  - Load opts  : {self.load_opt} \n",
+            level=0,
+        )
 
     def set_config(self, config: dict) -> None:
         """
@@ -39,20 +46,10 @@ class TIMEBANDModel:
 
         params:
             config: Dataset configuration dict
-                `config['models']`
+                `config['core'] & config['models']`
         """
-        self.directory = config["directory"]
-        self.model_tag = config["model_tag"]
-        self.model_dir = os.path.join(self.directory, self.model_tag)
-        os.mkdir(self.directory) if not os.path.exists(self.directory) else None
-        os.mkdir(self.model_dir) if not os.path.exists(self.model_dir) else None
-
-        self.load_option = config["load"]
-        self.save_option = config["save"]
-        self.best_score = config["best_score"]
-
-        self.hidden_dim = config["hidden_dim"]
-        self.layers_num = config["layers_num"]
+        logger.info("Timeband Model Setting")
+        self.__dict__ = {**config, **self.__dict__}
 
     def initiate(self, dims: dict) -> None:
         if self.netD and self.netG:
@@ -63,18 +60,17 @@ class TIMEBANDModel:
         netG = NetG(enc_dim, dec_dim, self.hidden_dim, self.layers_num, self.device)
 
         self.netD, self.netG = netD.to(self.device), netG.to(self.device)
-        logger.info(f" - Initiated netD : {self.netD}, netG: {self.netG}")
+        logger.info(f" - Initiated netD : {self.netD}, netG: {self.netG}", level=0)
         self.save()
 
     def load(self, postfix: str = "") -> tuple((NetD, NetG)):
         netD_path = self.get_path("netD", postfix)
         netG_path = self.get_path("netG", postfix)
 
-        if self.load_option:
+        if self.load_opt:
             if os.path.exists(netD_path) and os.path.exists(netG_path):
                 logger.info(f" - {postfix} Model Loading : {netD_path}, {netG_path}")
-                self.netD = torch.load(netD_path)
-                self.netG = torch.load(netG_path)
+                self.netD, self.netG = torch.load(netD_path), torch.load(netG_path)
             else:
                 logger.warn(f" - {postfix} Model Loading Fail")
 
@@ -84,7 +80,7 @@ class TIMEBANDModel:
         netD_path = self.get_path("netD", postfix)
         netG_path = self.get_path("netG", postfix)
 
-        if self.save_option:
+        if self.save_opt:
             torch.save(self.netD, netD_path)
             torch.save(self.netG, netG_path)
 
@@ -99,5 +95,5 @@ class TIMEBANDModel:
 
     def get_path(self, target: str, postfix: str = "") -> os.path:
         filename = target if postfix == "" else f"{target}_{postfix}"
-        filepath = os.path.join(self.model_dir, f"{filename}.pth")
+        filepath = os.path.join(self.models_path, f"{filename}.pth")
         return filepath
