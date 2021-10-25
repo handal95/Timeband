@@ -12,20 +12,27 @@ class Parser:
     def get_parser(self, config) -> Namespace:
         parser = argparse.ArgumentParser(description="** BandGan CLI **")
         parser.set_defaults(function=None)
-        
-        # DASHBOARD
+
+        # Launcher
         parser.add_argument(
-            "-b",
-            "--batchs",
-            type=int,
-            help="Batch size",
-            default=config["core"]["batch_size"],
+            "-tm",
+            "--train_mode",
+            type=self.str2bool,
+            help="If True, Do the train",
+            default=config["train_mode"],
         )
-        
+        parser.add_argument(
+            "-rm",
+            "--run_mode",
+            type=self.str2bool,
+            help="If True, Do the run",
+            default=config["run_mode"],
+        )
+
         # DASHBOARD
         parser.add_argument(
             "-v",
-            "--visualize",
+            "--visualize_opt",
             type=self.str2bool,
             help="Visualize options",
             default=config["dashboard"]["visualize_opt"],
@@ -48,9 +55,11 @@ class Parser:
 
     def set_config(self, config: dict, parser: Namespace) -> dict:
         # -v, --visual
+        config["run_mode"] = parser.run_mode
+        config["train_mode"] = parser.train_mode
         config["dashboard"]["width"] = parser.dashboard_width
         config["dashboard"]["height"] = parser.dashboard_height
-        config["dashboard"]["visualize_opt"] = parser.visualize
+        config["dashboard"]["visualize_opt"] = parser.visualize_opt
 
         return config
 

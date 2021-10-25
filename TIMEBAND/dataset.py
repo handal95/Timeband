@@ -43,7 +43,7 @@ class TIMEBANDDataset:
             f"  - Targets   : {self.targets} ({self.decode_dim} cols) \n"
             f"  - Cut Scale : Min {self.cutoff['min']}, Max {self.cutoff['max']}"
             f"  - Input Col : {self.data.columns}",
-            level=0
+            level=0,
         )
 
     def set_config(self, config: dict) -> None:
@@ -60,14 +60,14 @@ class TIMEBANDDataset:
         self.__dict__ = {**config, **self.__dict__}
         self.data_path = os.path.join(self.directory, self.data_name)
         self.missing_path = os.path.join(self.path, "missing_label.csv")
-        self.anomals_path = os.path.join(self.path, "anomals_label.csv")
+        self.anomaly_path = os.path.join(self.path, "anomaly_label.csv")
 
     def init_dataset(self) -> pd.DataFrame:
         # Read csv data
         self.csv_path = os.path.join(self.directory, f"{self.data_name}.csv")
-        data = pd.read_csv(self.csv_path, parse_dates=[self.time_index])
+        self.origin = data = pd.read_csv(self.csv_path, parse_dates=[self.time_index])
         data.drop(self.drops, axis=1, inplace=True)
-        
+
         # Time indexing
         times = data[self.time_index].dt
         data.set_index(self.time_index, inplace=True)
@@ -75,37 +75,37 @@ class TIMEBANDDataset:
         self.times = data.index.strftime(self.time_format).tolist()
 
         # Fill time gap
-        _target = data[self.targets]
-        data = data.interpolate(method='time')
-
-        target = data[self.targets]
-        data[self.targets] = target[self.targets]
+        target_origin = data[self.targets]
+        data = data.interpolate(method="time")
 
         # Observed / Forecast
-        observed = target[: self.observed_len + self.forecast_len].to_numpy()
-        forecast = target[self.observed_len :].to_numpy()
-        self.observed = torch.from_numpy(observed)
-        self.forecast = torch.from_numpy(forecast)
+        observed = data[self.targets][: self.observed_len + self.forecast_len]
+        forecast = data[self.targets][self.observed_len :]
+        self.observed = torch.from_numpy(observed.to_numpy())
+        self.forecast = torch.from_numpy(forecast.to_numpy())
 
-        # Initial Labeling
+        # Missing Value
+        data = self.impute_zero_value(data) if self.zero_impute else data
+        if os.path.exists(self.missing_path):
+            self.missing_df = pd.read_csv(self.missing_path)
+            self.missing_df.drop(self.time_index, axis=1, inplace=True)
+            self.missing = self.missing_df.to_numpy()
+        else:
+            self.missing = target_origin.isna().astype(int).to_numpy()
+            self.missing[target_origin == 0] = 1 if self.zero_is_missing else 0
+            self.missing_df = pd.DataFrame(
+                self.missing, columns=self.targets, index=data.index
+            )
+            self.missing_df.to_csv(self.missing_path)
+        self.missing = self.missing[self.observed_len :]
+
+        # Anomalies
         self.anomaly = np.zeros(data[self.targets].shape)
         self.anomaly[:] = np.nan
-
-        self.missing = _target.isna().astype(int)
-        if self.zero_is_missing:
-            data[target == 0] = np.nan
-            self.missing = data[self.targets].isna()
-            data = self.impute_zero_value(data) if self.zero_impute else data
-
-        self.anomaly[self.missing == True] = 0
-        
-        # Saving labels
-        self.missing_df = pd.DataFrame(self.missing, columns=self.targets, index=data.index)
-        self.anomaly_df = pd.DataFrame(self.anomaly, columns=self.targets, index=data.index)
-        self.missing_df.to_csv(self.missing_path)
-        self.anomaly_df.to_csv(self.anomals_path)
-
-        self.missing = self.missing[self.observed_len:].to_numpy()
+        self.anomaly_df = pd.DataFrame(
+            self.anomaly, columns=self.targets, index=data.index
+        )
+        self.anomaly_df.to_csv(self.anomaly_path)
 
         # Data Processing
         data = self.minmax_scaler(data)
@@ -119,7 +119,10 @@ class TIMEBANDDataset:
         if self.time_info["weekday"]:
             # data = self.onehot(data, times.day_name())
             data = time_cycle(data, times.weekday, 7, "weekday")
-            
+
+        if self.time_info["days"]:
+            data = time_cycle(data, times.day, 31, "days", cycle=False)
+
         if self.time_info["hours"]:
             data = time_cycle(data, times.hour, 24, "hours")
 
@@ -140,13 +143,13 @@ class TIMEBANDDataset:
         return data
 
     def prepare_dataset(self, k_step: int = 0):
+        # Prepare data
         data_len = self.data_length - self.sliding_step + k_step
         data = self.data[:data_len]
 
         # Windowing data
         stop = data_len - self.observed_len - self.forecast_len
         encoded, decoded = self.windowing(data, stop)
-        _______, missing = self.windowing(self.missing_df, stop)
 
         # Split dataset
         valid_minlen = int((self.min_valid_scale) * self.forecast_len)
@@ -154,27 +157,32 @@ class TIMEBANDDataset:
         split_idx = valid_idx - self.forecast_len - self.observed_len
 
         # Dataset Preparing
-        self.trainset = Dataset(encoded[:split_idx], decoded[:split_idx], missing[:split_idx])
-        self.validset = Dataset(encoded[split_idx:], decoded[split_idx:], missing[split_idx:])
+        self.trainset = Dataset(encoded[:split_idx], decoded[:split_idx])
+        self.validset = Dataset(encoded[split_idx:], decoded[split_idx:])
 
         # Feature info
         self.train_size = self.trainset.encoded.shape[0]
         self.valid_size = self.validset.encoded.shape[0]
-
         logger.info(f"  - Train size : {self.train_size}, Valid size {self.valid_size}")
+
         return self.trainset, self.validset
 
     def prepare_testset(self):
-        data = self.data
-        
-        # Windowing data
-        stop = len(data)
-        encoded, decoded = self.windowing(data, stop)
-        _______, missing = self.windowing(self.missing, stop)
-        dataset = Dataset(encoded, decoded, missing)
+        # Prepare data
+        data_len = self.data_length
+        data = self.data[:data_len]
 
+        # Windowing data
+        stop = data_len - self.observed_len - self.forecast_len
+        encoded, decoded = self.windowing(data, stop)
+
+        # Dataset Preparing
+        dataset = Dataset(encoded, decoded)
+
+        # Feature info
         data_size = dataset.encoded.shape[0]
         logger.info(f" - Data size : {data_size}")
+
         return dataset
 
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
@@ -314,4 +322,3 @@ class TIMEBANDDataset:
         decoded = data["decoded"].to(self.device)
 
         return encoded, decoded
-

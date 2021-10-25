@@ -32,12 +32,9 @@ class TIMEBANDRunner:
         metric: TIMEBANDMetric,
         losses: TIMEBANDLoss,
         dashboard: TIMEBANDDashboard,
-        device: torch.device,
     ) -> None:
         global logger
         logger = config["logger"]
-        # Set device
-        self.device = device
 
         self.dataset = dataset
         self.models = models
@@ -47,14 +44,7 @@ class TIMEBANDRunner:
 
         # Set Config
         config = self.set_config(config=config)
-
-        self.data_name = self.dataset.data_name
-        self.target_col = self.dataset.target_col
-        self.target_data = self.dataset.data[self.target_col]
-        self.observed_len = self.dataset.observed_len
         self.forecast_len = self.dataset.forecast_len
-
-        self.labels = None
 
     def set_config(self, config: dict = None) -> dict:
         """
@@ -66,100 +56,108 @@ class TIMEBANDRunner:
         """
 
         # Train option
-        self.directory = config["directory"]
-        self.labeling = config["labeling"]
-        self.zero_is_missing = config["zero_is_missing"]
+        self.__dict__ = {
+            **config,
+            **self.__dict__,
+        }
 
     def run(self, dataset: DataLoader) -> None:
         logger.info("RUN the model")
 
-        # Label Setting
-        self.data_labeling()
-
         # Prediction
-        self.data_idx = 0
+        self.idx = 0
         self.pred_initate()
 
         # Dashboard
-        self.dashboard.visual = True
+        self.dashboard.visualize_opt = True
         self.dashboard.init_figure()
 
-        # Train Section
-        for i, data in enumerate(tqdm(dataset)):
+        # Process step
+        def generate(x):
+            return self.models.netG(x)[:, : self.forecast_len].to(self.device)
+
+        tqdm_ = tqdm(dataset)
+        outputs = self.dataset.observed
+        for i, data in enumerate(tqdm_):
             true_x = data["encoded"].to(self.device)
             true_y = data["decoded"].to(self.device)
             (batchs, forecast_len, target_dims) = true_y.shape
 
-            fake_y = self.models.netG(true_x)[:, :forecast_len].to(self.device)
+            fake_y = generate(true_x)
             pred_y = self.dataset.denormalize(fake_y.cpu())
+            preds, lower, upper = self.predicts(pred_y)
 
-            self.predicts(pred_y)
-            preds = torch.tensor(self.preds)
+            pred_len = preds.shape[0]
+            reals = self.dataset.forecast[self.idx : self.idx + pred_len].numpy()
+            masks = self.dataset.missing[self.idx : self.idx + pred_len]
 
-            reals = self.dataset.forecast[
-                self.data_idx : self.data_idx + preds.shape[0]
-            ].numpy()
+            outputs = np.concatenate([outputs[:-forecast_len], reals])
+            target = self.adjust(outputs, preds, masks, lower, upper)
+            outputs[-pred_len:] = target
 
-            # Impute Zeros
-            output = reals.copy()
-            for b in range(batchs):
-                label = self.label_data[self.observed_len + self.data_idx + b]
-                rlabel = self.label_data[self.observed_len + self.data_idx + b - 1]
-                output[b, label == MISSING_VALUE] = (
-                    0.2 * preds[b, label == MISSING_VALUE]
-                    + 0.8 * output[b - 1, label == MISSING_VALUE]
-                )
-
-            self.data_idx += batchs
-            self.dashboard.train_vis(batchs, reals, self.preds, self.stds, output)
+            self.dashboard.vis(batchs, reals, preds, lower, upper, target)
+            self.idx += batchs
 
         # Dashboard
         self.dashboard.clear_figure()
 
-        self.models.load("BEST")
-        self.models.save(best=True)
-        return None
+        outputs = pd.DataFrame(
+            outputs, columns=self.dataset.targets, index=self.dataset.data.index
+        )
+        return outputs
+
+    def adjust(self, outputs, preds, masks, lower, upper):
+        len = preds.shape[0]
+        a = self.missing_gamma
+        b = self.anomaly_gamma
+
+        for p in range(len):
+            value = outputs[p - len]
+
+            lmask = outputs[p - len] < lower[p]
+            umask = outputs[p - len] > upper[p]
+            mmask = masks[p] * (lmask + umask)
+
+            value = (1 - mmask) * value + mmask * (
+                a * preds[p] + (1 - a) * outputs[p - len - 1]
+            )
+            value = (1 - lmask) * value + lmask * (b * lower[p] + (1 - b) * value)
+            value = (1 - umask) * value + umask * (b * upper[p] + (1 - b) * value)
+
+            outputs[p - len] = value
+
+        target = outputs[-len:]
+        return target
 
     def pred_initate(self):
-        decoded_shape = self.dataset.decode_shape
-        (batch_size, forecast_len, target_dims) = decoded_shape
+        forecast_len = self.dataset.decode_shape[1]
+        target_dims = self.dataset.decode_shape[2]
 
-        init_shape3 = (forecast_len - 1, forecast_len, target_dims)
-        init_shape2 = (forecast_len - 1, target_dims)
-
-        # version v2.2
-        self.pred_data = np.empty(init_shape3)
-        self.pred_data[:] = np.nan
-
-        self.preds = np.empty(init_shape2)
+        self.preds = np.empty((forecast_len - 1, forecast_len, target_dims))
         self.preds[:] = np.nan
-
-        self.stds = np.zeros(init_shape2)
 
     def predicts(self, pred):
         (batch_size, forecast_len, target_dims) = pred.shape
         pred = pred.detach().numpy()
 
-        nan_shape3 = np.empty((batch_size, forecast_len, target_dims))
-        nan_shape3[:] = np.nan
-        nan_shape2 = np.empty((batch_size, target_dims))
-        nan_shape2[:] = np.nan
+        nan_shape = np.empty((batch_size, forecast_len, target_dims))
+        nan_shape[:] = np.nan
 
-        self.pred_data = np.concatenate(
-            [self.pred_data[1 - forecast_len :], nan_shape3]
-        )
+        self.preds = np.concatenate([self.preds[1 - forecast_len :], nan_shape])
         for f in range(forecast_len):
-            self.pred_data[f : batch_size + f, f] = pred[:, f]
+            self.preds[f : batch_size + f, f] = pred[:, f]
 
-        self.preds = np.nanmedian(self.pred_data, axis=1)
-        self.stds = np.nanstd(self.pred_data, axis=1)
+        preds = np.nanmedian(self.preds, axis=1)
+        std = np.nanstd(self.preds, axis=1)
 
         for f in range(forecast_len - 1, 0, -1):
             gamma = (forecast_len - f) / (forecast_len - 1)
-            self.stds[-f] += self.stds[-f - 1] * gamma
+            std[-f] += std[-f - 1] * gamma
 
-        for f in range(1, forecast_len):
-            self.stds[f] += self.stds[f - 1] * 0.1
+        lower = preds - self.band_width * std
+        upper = preds + self.band_width * std
+
+        return preds, lower, upper
 
     def data_labeling(self):
         if not self.labeling:

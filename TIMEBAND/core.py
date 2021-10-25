@@ -1,6 +1,5 @@
+import os
 import torch
-from utils.logger import Logger
-from utils.device import init_device
 
 from torch.utils.data import DataLoader
 from TIMEBAND.loss import TIMEBANDLoss
@@ -56,7 +55,9 @@ class TIMEBANDCore:
         self.losses_cfg = {**config["core"], **config["losses"]}
         self.trainer_cfg = {**config["core"], **config["trainer"]}
         self.dashboard_cfg = {**config["core"], **config["dashboard"]}
-        self.runner_cfg = {**config["core"], **config["runner"]}
+        self.runner_cfg = {**config["core"], **config["trainer"]}
+
+        self.output_path = os.path.join(self.outputs, self.data_name, self.TAG)
 
     def init_device(self):
         """
@@ -68,6 +69,7 @@ class TIMEBANDCore:
         return torch.device(device)
 
     def train(self) -> None:
+        # Init the models
         self.models.initiate(dims=self.dataset.dims)
 
         self.trainer = TIMEBANDTrainer(
@@ -94,10 +96,10 @@ class TIMEBANDCore:
 
             logger.info(f"Done ({k + 1}/{self.dataset.sliding_step + 1}) ")
 
-    def run(self):
+    def run(self) -> None:
+        # Init the models
         self.models.initiate(dims=self.dataset.dims)
-        if self.pretrain:
-            self.models.load("BEST")
+
         self.runner = TIMEBANDRunner(
             self.runner_cfg,
             self.dataset,
@@ -105,23 +107,28 @@ class TIMEBANDCore:
             self.losses,
             self.metric,
             self.dashboard,
-            self.device,
         )
 
-        self.batch_size = 1
-        dataset = self.dataset.prepare_testset(0, split=False)
+        if self.pretrain:
+            self.models.load("BEST")
+
+        dataset = self.dataset.prepare_testset()
         dataset = self.loader(dataset)
 
-        output = self.runner.run(dataset)
-        output.to_csv(f"./outputs/output.csv", index=False)
+        target_output = self.runner.run(dataset)
+        target_output.to_csv(os.path.join(self.output_path, "target.csv"))
+
+        data_output = self.dataset.origin
+        data_output[target_output.columns] = target_output
+        data_output.to_csv(os.path.join(self.output_path, f"{self.TAG}.csv"))
 
     def visualize(self):
         pass
 
-    def loader(self, dataset: TIMEBANDDataset):
+    def loader(self, dataset: TIMEBANDDataset) -> DataLoader:
         dataloader = DataLoader(dataset, self.batch_size, num_workers=self.workers)
         return dataloader
 
-    def clear(self):
+    def clear(self) -> None:
         del self.dataset
         self.dataset = None

@@ -3,11 +3,8 @@ import pandas as pd
 
 if __name__ == "__main__":
     time_index = "수집시각"
-    data = pd.read_csv(
-        "POWER_M1_FILL copy.csv",
-        parse_dates=[time_index]
-    )
-    
+    data = pd.read_csv("POWER_M1_FILL copy.csv", parse_dates=[time_index])
+
     # data['수집시각'] = data['수집시각'].astype(str)
     # data['수집시각'] = data['수집시각'].apply(
     #     lambda x: f"{x[:4]}-{x[4:6]}-{x[6:8]} {x[8:10]}:{x[10:12]}:{x[12:14]}"
@@ -26,9 +23,9 @@ if __name__ == "__main__":
             for _ in range(1 + (end_time - start_time) // timegap):
                 time = start_time + _ * timegap
                 data = data.append({time_index: time}, ignore_index=True)
-                
+
     data = data.set_index(time_index).sort_index().reset_index()
-    
+
     filled_len = len(data)
     print(f"Filling Time Gap :{filled_len - origin_len} : timegap : {timegap}")
 

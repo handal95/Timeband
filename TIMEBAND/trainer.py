@@ -72,12 +72,6 @@ class TIMEBANDTrainer:
         self.reload_interval = config["models"]["reload_interval"]
         self.save_interval = config["models"]["save_interval"]
 
-        # FIXME Test config
-        self.amplifier = config["amplifier"]
-        self.amplifier_scope = config["amplifier_scope"]
-        self.print_verbose = config["print"]["verbose"]
-        self.print_interval = config["print"]["interval"]
-
     def model_update(self, epoch: int, score: float) -> None:
         # Best Model Save options
         if score < self.models.best_score:
@@ -115,17 +109,17 @@ class TIMEBANDTrainer:
             self.optimG = Adam(paramG, lr=lrG)
 
             # Prediction
-            self.data_idx = 0
+            self.idx = 0
             self.pred_initate()
 
             # Dashboard
             self.dashboard.init_figure()
 
-            # Train Section
+            # Train Step
             train_score = self.train_step(epoch, trainset, training=True)
             train_score_plot.append(train_score)
 
-            # Valid Section
+            # Valid Step
             valid_score = self.train_step(epoch, validset, training=False)
             valid_score_plot.append(valid_score)
 
@@ -137,18 +131,18 @@ class TIMEBANDTrainer:
         self.models.load("BEST")
         self.models.save(best=True)
 
-    def train_step(self, epoch, dataset, training=True):
+    def train_step(self, epoch: int, dataset: DataLoader, training: bool = True):
         def discriminate(x):
             return self.models.netD(x).to(self.device)
 
         def generate(x):
             return self.models.netG(x)[:, : self.forecast_len].to(self.device)
 
-        amplifier = self.amplifier
-
         losses = self.losses.init_loss()
         score = self.metric.init_score()
+
         tqdm_ = tqdm(dataset, desc(training, epoch, score, losses))
+        outputs = self.dataset.observed
         for i, data in enumerate(tqdm_):
             # #######################
             # Critic & Optimizer init
@@ -179,8 +173,6 @@ class TIMEBANDTrainer:
             # #######################
             true_x = data["encoded"].to(self.device)
             true_y = data["decoded"].to(self.device)
-            mask_y = data["missing"].to(self.device)
-            
             (batchs, forecast_len, target_dims) = true_y.shape
 
             # #######################
@@ -189,8 +181,8 @@ class TIMEBANDTrainer:
             fake_y = generate(true_x)
             Dy = discriminate(true_y)
             DGx = discriminate(fake_y)
-            
-            # true_y = (1 - mask_y) * true_y + mask_y * fake_y
+
+            # masked = (1 - mask_y) * true_y + mask_y * fake_y
             if training:
                 errD = self.losses.dis_loss(true_y, fake_y, Dy, DGx)
                 errD.backward()
@@ -205,7 +197,7 @@ class TIMEBANDTrainer:
             fake_y = generate(true_x)
             DGx = self.models.netD(fake_y)
 
-            # true_y = (1 - mask_y) * true_y + mask_y * fake_y
+            # masked = (1 - mask_y) * true_y + mask_y * fake_y
             if training:
                 errG = self.losses.gen_loss(true_y, fake_y, DGx)
                 errG.backward()
@@ -218,90 +210,87 @@ class TIMEBANDTrainer:
             # Scoring
             # #######################
             pred_y = self.dataset.denormalize(fake_y.cpu())
-            self.predicts(pred_y)
-            preds = torch.tensor(self.preds)
+            preds, _, _ = self.predicts(pred_y)
+            preds = torch.tensor(preds)
 
-            reals = self.dataset.forecast[
-                self.data_idx : self.data_idx + preds.shape[0]
-            ]
-            masks = torch.tensor(self.dataset.missing[
-                self.data_idx : self.data_idx + preds.shape[0]
-            ])
-            
-            outputs = (1 - masks) * reals + masks * preds
-            self.data_idx += batchs
+            pred_len = preds.shape[0]
+            reals = self.dataset.forecast[self.idx : self.idx + pred_len]
+            masks = self.dataset.missing[self.idx : self.idx + pred_len]
+            masks = torch.tensor(masks)
 
-            self.metric.NMAE(reals, preds)
-            self.metric.SCORE(outputs, preds.clone().detach())
-            self.metric.RMSE(outputs, preds)
-            nme = self.metric.NME(outputs, preds * self.amplifier)
-            if training and i > self.amplifier_scope:
-                amplifier += nme * amplifier * (batchs / self.dataset.data_length) * 0.01
+            self.metric.NMAE(reals, preds, masks)
+            self.metric.RMSE(reals, preds, masks)
+            self.metric.NME(reals, preds, masks)
 
             losses = self.losses.loss(i)
             score = self.metric.score(i)
 
             # Losses Log
+            self.idx += batchs
             tqdm_.set_description(desc(training, epoch, score, losses))
-            # if not training:
-            self.dashboard.train_vis(
-                batchs, reals, self.preds * self.amplifier, self.stds, outputs
-            )
-
-        if training:
-            self.amplifier = self.amplifier + (amplifier - self.amplifier) * 0.8
-        elif (epoch + 1) % self.print_interval == 0:
-            print(f"[ Amplifier ] {self.amplifier:2.5f}")
 
         return self.metric.nmae / (i + 1)
 
+    def adjust(self, outputs, preds, masks, lower, upper):
+        len = preds.shape[0]
+        a = self.missing_gamma
+        b = self.anomaly_gamma
+
+        for p in range(len):
+            value = outputs[p - len]
+
+            lmask = outputs[p - len] < lower[p]
+            umask = outputs[p - len] > upper[p]
+            mmask = masks[p] * (lmask + umask)
+
+            value = (1 - mmask) * value + mmask * (
+                a * preds[p] + (1 - a) * outputs[p - len - 1]
+            )
+            value = (1 - lmask) * value + lmask * (b * lower[p] + (1 - b) * value)
+            value = (1 - umask) * value + umask * (b * upper[p] + (1 - b) * value)
+
+            outputs[p - len] = value
+
+        target = outputs[-len:]
+        return target
+
     def pred_initate(self):
-        decoded_shape = self.dataset.decode_shape
-        (batch_size, forecast_len, target_dims) = decoded_shape
+        forecast_len = self.dataset.decode_shape[1]
+        target_dims = self.dataset.decode_shape[2]
 
-        init_shape3 = (forecast_len - 1, forecast_len, target_dims)
-        init_shape2 = (forecast_len - 1, target_dims)
-
-        # version v2.2
-        self.pred_data = np.empty(init_shape3)
-        self.pred_data[:] = np.nan
-
-        self.preds = np.empty(init_shape2)
+        self.preds = np.empty((forecast_len - 1, forecast_len, target_dims))
         self.preds[:] = np.nan
-
-        self.stds = np.zeros(init_shape2)
 
     def predicts(self, pred):
         (batch_size, forecast_len, target_dims) = pred.shape
         pred = pred.detach().numpy()
 
-        nan_shape3 = np.empty((batch_size, forecast_len, target_dims))
-        nan_shape3[:] = np.nan
-        nan_shape2 = np.empty((batch_size, target_dims))
-        nan_shape2[:] = np.nan
+        nan_shape = np.empty((batch_size, forecast_len, target_dims))
+        nan_shape[:] = np.nan
 
-        self.pred_data = np.concatenate(
-            [self.pred_data[1 - forecast_len :], nan_shape3]
-        )
+        self.preds = np.concatenate([self.preds[1 - forecast_len :], nan_shape])
         for f in range(forecast_len):
-            self.pred_data[f : batch_size + f, f] = pred[:, f]
+            self.preds[f : batch_size + f, f] = pred[:, f]
 
-        self.preds = np.nanmedian(self.pred_data, axis=1)
-        self.stds = np.nanstd(self.pred_data, axis=1)
+        preds = np.nanmedian(self.preds, axis=1)
+        std = np.nanstd(self.preds, axis=1)
 
         for f in range(forecast_len - 1, 0, -1):
             gamma = (forecast_len - f) / (forecast_len - 1)
-            self.stds[-f] += self.stds[-f - 1] * gamma
+            std[-f] += std[-f - 1] * gamma
 
-        for f in range(1, forecast_len):
-            self.stds[f] += self.stds[f - 1] * 0.1
+        for f in range(1, std.shape[0]):
+            std[f] += std[f - 1] * 0.2
+
+        lower = preds - self.band_width * std
+        upper = preds + self.band_width * std
+        return preds, lower, upper
 
 
 def desc(training, epoch, score, losses):
     process = "Train" if training else "Valid"
 
     if not training:
-        score["SCORE"] = colorstr("bright_red", score["SCORE"])
         score["RMSE"] = colorstr("bright_blue", score["RMSE"])
         score["NMAE"] = colorstr("bright_red", score["NMAE"])
         losses["L1"] = colorstr("bright_blue", losses["L1"])
@@ -310,7 +299,7 @@ def desc(training, epoch, score, losses):
 
     return (
         f"[{process} e{epoch + 1:4d}] "
-        f"Score {score['SCORE']} ( NME {score['NME']} / NMAE {score['NMAE']} / RMSE {score['RMSE']} ) "
+        f"NMAE Score {score['NMAE']} ( NME {score['NME']} / RMSE {score['RMSE']} ) "
         f"D {losses['D']} ( R {losses['R']} F {losses['F']} ) "
         f"G {losses['G']} ( G {losses['G_']} L1 {losses['L1']} L2 {losses['L2']} GP {losses['GP']} )"
     )

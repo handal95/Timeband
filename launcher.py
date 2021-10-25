@@ -109,12 +109,20 @@ def launcher():
 
     # Run Model Trainning
     logger.info("** Model   Training **")
-    model.train()
+    try:
+        if config["train_mode"]:
+            model.train()
+    except KeyboardInterrupt:
+        print("Abort!")
 
     logger.info("*********************")
     logger.info("- Model Output -")
     logger.info("*********************")
-    model.run()
+    try:
+        if config["run_mode"]:
+            model.run()
+    except KeyboardInterrupt:
+        print("Abort!")
 
     logger.info("*********************")
     logger.info("- Data Visualize -")
