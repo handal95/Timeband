@@ -1,14 +1,10 @@
 import os
-import torch
 import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
-from torch.optim import RMSprop, Adam
 from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
 
-from utils.logger import Logger
 from utils.color import colorstr
 from TIMEBAND.loss import TIMEBANDLoss
 from TIMEBAND.model import TIMEBANDModel
@@ -69,7 +65,6 @@ class TIMEBANDRunner:
         self.pred_initate()
 
         # Dashboard
-        self.dashboard.visualize_opt = True
         self.dashboard.init_figure()
 
         # Process step

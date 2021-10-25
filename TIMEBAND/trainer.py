@@ -1,18 +1,15 @@
 import torch
 import numpy as np
-import pandas as pd
 
 from tqdm import tqdm
 from torch.optim import RMSprop, Adam
 from torch.utils.data import DataLoader
 
-from utils.logger import Logger
 from utils.color import colorstr
 from TIMEBAND.loss import TIMEBANDLoss
 from TIMEBAND.model import TIMEBANDModel
 from TIMEBAND.metric import TIMEBANDMetric
 from TIMEBAND.dataset import TIMEBANDDataset
-from TIMEBAND.dashboard import TIMEBANDDashboard
 
 logger = None
 
@@ -25,7 +22,6 @@ class TIMEBANDTrainer:
         models: TIMEBANDModel,
         metric: TIMEBANDMetric,
         losses: TIMEBANDLoss,
-        dashboard: TIMEBANDDashboard,
     ) -> None:
         global logger
         logger = config["logger"]
@@ -34,7 +30,6 @@ class TIMEBANDTrainer:
         self.models = models
         self.metric = metric
         self.losses = losses
-        self.dashboard = dashboard
 
         # Set Config
         config = self.set_config(config=config)
@@ -112,9 +107,6 @@ class TIMEBANDTrainer:
             self.idx = 0
             self.pred_initate()
 
-            # Dashboard
-            self.dashboard.init_figure()
-
             # Train Step
             train_score = self.train_step(epoch, trainset, training=True)
             train_score_plot.append(train_score)
@@ -124,9 +116,6 @@ class TIMEBANDTrainer:
             valid_score_plot.append(valid_score)
 
             self.model_update(epoch, valid_score)
-
-            # Dashboard
-            self.dashboard.clear_figure()
 
         self.models.load("BEST")
         self.models.save(best=True)

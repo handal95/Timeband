@@ -78,7 +78,6 @@ class TIMEBANDCore:
             self.models,
             self.metric,
             self.losses,
-            self.dashboard,
         )
 
         for k in range(self.dataset.sliding_step + 1):

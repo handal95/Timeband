@@ -1,7 +1,5 @@
 import os
 import torch
-import numpy as np
-from utils.logger import Logger
 from .utils.lstm_layer import LSTMGenerator as NetG
 from .utils.lstm_layer import LSTMDiscriminator as NetD
 

@@ -1,4 +1,3 @@
-import os
 import argparse
 from argparse import Namespace
 
@@ -32,10 +31,10 @@ class Parser:
         # DASHBOARD
         parser.add_argument(
             "-v",
-            "--visualize_opt",
+            "--vis_opt",
             type=self.str2bool,
             help="Visualize options",
-            default=config["dashboard"]["visualize_opt"],
+            default=config["dashboard"]["vis_opt"],
         )
         parser.add_argument(
             "-dw",
@@ -59,7 +58,7 @@ class Parser:
         config["train_mode"] = parser.train_mode
         config["dashboard"]["width"] = parser.dashboard_width
         config["dashboard"]["height"] = parser.dashboard_height
-        config["dashboard"]["visualize_opt"] = parser.visualize_opt
+        config["dashboard"]["vis_opt"] = parser.vis_opt
 
         return config
 

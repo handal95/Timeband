@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from utils.color import colorstr
 
 
 class GANLoss(nn.Module):

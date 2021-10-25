@@ -32,7 +32,7 @@ class TIMEBANDDashboard:
         logger = config["logger"]
 
         logger.info(
-            f"\n  Dashboard: \n" f"  - visualize : {self.visualize_opt} \n",
+            f"\n  Dashboard: \n" f"  - visualize : {self.vis_opt} \n",
             level=0,
         )
 
@@ -49,7 +49,7 @@ class TIMEBANDDashboard:
         self.__dict__ = {**config, **self.__dict__}
 
     def init_figure(self) -> tuple:
-        if self.visualize_opt is False:
+        if self.vis_opt is False:
             return
 
         self.time_idx = 0
@@ -77,7 +77,7 @@ class TIMEBANDDashboard:
         self.fig, self.axes = fig, axes
 
     def vis(self, batchs, reals, preds, lower, upper, target=None):
-        if self.visualize_opt is False:
+        if self.vis_opt is False:
             return
 
         self.reals = np.concatenate([self.reals[: 1 - self.forecast_len], reals])
@@ -168,7 +168,7 @@ class TIMEBANDDashboard:
         self.fig.canvas.flush_events()
 
     def clear_figure(self) -> None:
-        if self.visualize_opt is False:
+        if self.vis_opt is False:
             return
 
         plt.close("all")
