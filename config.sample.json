@@ -48,8 +48,6 @@
         }
     },
     "models": {
-        "directory": "TIMEBAND/pretrained/",
-        
         "save_opt": true,
         "load_opt": true,
 
@@ -88,7 +86,6 @@
         "vis_column": 2, 
         "scope": 90,
         
-        "band_width": 20,
         "feats_by_rows": 1,
         "xinterval": 60,
 

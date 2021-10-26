@@ -142,7 +142,7 @@ class TIMEBANDDataset:
 
         return data
 
-    def prepare_dataset(self, k_step: int = 0):
+    def prepare_dataset(self, k_step: int = 0) -> pd.DataFrame:
         # Prepare data
         data_len = self.data_length - self.sliding_step + k_step
         data = self.data[:data_len]
@@ -167,7 +167,7 @@ class TIMEBANDDataset:
 
         return self.trainset, self.validset
 
-    def prepare_testset(self):
+    def prepare_testset(self) -> pd.DataFrame:
         # Prepare data
         data_len = self.data_length
         data = self.data[:data_len]

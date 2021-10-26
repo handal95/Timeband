@@ -121,13 +121,6 @@ class TIMEBANDCore:
         data_output[target_output.columns] = target_output
         data_output.to_csv(os.path.join(self.output_path, f"{self.TAG}.csv"))
 
-    def visualize(self):
-        pass
-
     def loader(self, dataset: TIMEBANDDataset) -> DataLoader:
         dataloader = DataLoader(dataset, self.batch_size, num_workers=self.workers)
         return dataloader
-
-    def clear(self) -> None:
-        del self.dataset
-        self.dataset = None
