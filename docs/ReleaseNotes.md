@@ -3,6 +3,19 @@
 Forecasting on **multivariable** Time Series data
 
 ---
+### October 28, 2021 / v2.2
+#### New Features
+- File output with missing value imputation and anomaly correction
+- Label output about missing values and anomalies 
+- Modify output directory/file path
+- Modify log file from daily record to run-by-run record 
+- More CLI argument options
+
+#### Bug Fixes
+- Bugfix for Memory leak
+- Refactor for Dataset architecture
+
+---
 
 ### October 19, 2021 / v2.1
 #### New Features
