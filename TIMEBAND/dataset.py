@@ -144,11 +144,12 @@ class TIMEBANDDataset:
 
     def prepare_dataset(self, k_step: int = 0) -> pd.DataFrame:
         # Prepare data
-        data_len = self.data_length - self.sliding_step + k_step
-        data = self.data[:data_len]
+        sliding_len = self.data_length - self.sliding_step + k_step
+        data = self.data[:sliding_len]
+        data_len = len(data)
 
         # Windowing data
-        stop = data_len - self.observed_len - self.forecast_len
+        stop = data_len - self.forecast_len
         encoded, decoded = self.windowing(data, stop)
 
         # Split dataset
@@ -169,32 +170,30 @@ class TIMEBANDDataset:
 
     def prepare_testset(self) -> pd.DataFrame:
         # Prepare data
-        data_len = self.data_length
-        data = self.data[:data_len]
+        data = self.expand_data(self.data)
+        data_len = len(data)
 
         # Windowing data
-        stop = data_len - self.observed_len - self.forecast_len
+        stop = data_len - self.forecast_len
         encoded, decoded = self.windowing(data, stop)
 
         # Dataset Preparing
-        dataset = Dataset(encoded, decoded)
+        obsrvset = Dataset(encoded, decoded)
 
         # Feature info
-        data_size = dataset.encoded.shape[0]
+        data_size = obsrvset.encoded.shape[0]
         logger.info(f" - Data size : {data_size}")
 
-        return dataset
+        return obsrvset
 
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
         observed = []
         forecast = []
 
         y = x[self.targets]
-        for i in range(0, stop, self.stride):
-            j = i + self.observed_len
-
-            observed.append(x[i : i + self.observed_len])
-            forecast.append(y[j : j + self.forecast_len])
+        for i in range(self.observed_len, stop, self.stride):
+            observed.append(x[i - self.observed_len : i])
+            forecast.append(y[i : i + self.forecast_len])
 
         observed = np.array(observed)
         forecast = np.array(forecast)
@@ -311,6 +310,33 @@ class TIMEBANDDataset:
 
         encoded = pd.DataFrame(df, columns=categories, index=data.index)
         return pd.concat([data, encoded], axis=1)
+
+    def expand_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        if self.prediction:
+            times = []
+            gap = data.index[1] - data.index[0]
+            for i in range(self.forecast_len):
+                times.append(data.index[-1] + (i + 1) * gap)
+
+            encode_zero = np.zeros((self.forecast_len, self.encode_dim))
+            decode_zero = np.zeros((self.forecast_len, self.decode_dim))
+            decode_ones = np.ones((self.forecast_len, self.decode_dim))
+
+            item = pd.DataFrame(
+                encode_zero,
+                columns=self.data.columns,
+                index=times,
+            )
+            data = pd.concat([data, item], axis=0)
+
+            self.missing = np.concatenate([self.missing, decode_ones])
+            self.anomaly = np.concatenate([self.anomaly, decode_zero])
+            self.forecast = torch.from_numpy(
+                np.concatenate([self.forecast.detach().numpy(), decode_zero])
+            )
+            self.times = data.index.strftime(self.time_format).tolist()
+
+        return data
 
     def get_random(self):
         rand_scope = self.trainset.length - self.forecast_len

@@ -73,6 +73,7 @@ class TIMEBANDDashboard:
         self.lower = self.observed
         self.upper = self.observed
         self.output = self.observed
+        self.times = self.dataset.times
 
         self.fig, self.axes = fig, axes
 
@@ -159,6 +160,7 @@ class TIMEBANDDashboard:
         for i in range(len(self.axes)):
             self.axes[i].clear()
             self.axes[i].set_ylim(auto=True)
+            self.axes[i].grid()
 
         return self.fig, self.axes
 
