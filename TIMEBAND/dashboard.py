@@ -122,16 +122,16 @@ class TIMEBANDDashboard:
 
                     ax.plot(
                         true_ticks,
+                        self.reals[START:OBSRV, col],
+                        color=color,
+                        label=f"Real {feature_label}",
+                    )
+                    ax.plot(
+                        true_ticks,
                         self.output[START:OBSRV, col],
                         color="black",
                         linewidth=2,
                         label=f"Imputed {feature_label}",
-                    )
-                    ax.plot(
-                        true_ticks,
-                        self.reals[START:OBSRV, col],
-                        color=color,
-                        label=f"Real {feature_label}",
                     )
                     ax.plot(
                         pred_ticks,

@@ -177,13 +177,13 @@ class TIMEBANDDataset:
         encoded, decoded = self.windowing(data, stop)
 
         # Dataset Preparing
-        obsrvset = Dataset(encoded, decoded)
+        dataset = Dataset(encoded, decoded)
 
         # Feature info
-        data_size = obsrvset.encoded.shape[0]
+        data_size = dataset.encoded.shape[0]
         logger.info(f" - Data size : {data_size}")
 
-        return obsrvset
+        return dataset
 
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
         observed = []
