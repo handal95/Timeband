@@ -79,7 +79,7 @@ class TIMEBANDDataset:
         data = data.interpolate(method="time")
 
         # Observed / Forecast
-        observed = data[self.targets][: self.observed_len + self.forecast_len]
+        observed = data[self.targets][: self.observed_len + self.forecast_len - 1]
         forecast = data[self.targets][self.observed_len :]
         self.observed = torch.from_numpy(observed.to_numpy())
         self.forecast = torch.from_numpy(forecast.to_numpy())
@@ -110,7 +110,6 @@ class TIMEBANDDataset:
         # Data Processing
         data = self.minmax_scaler(data)
         data = self.normalize(data)
-
         # Time Encoding
         if self.time_info["month"]:
             # data = self.onehot(data, times.month_name())
@@ -191,7 +190,7 @@ class TIMEBANDDataset:
         forecast = []
 
         y = x[self.targets]
-        for i in range(self.observed_len, stop, self.stride):
+        for i in range(self.observed_len, stop + 1, self.stride):
             observed.append(x[i - self.observed_len : i])
             forecast.append(y[i : i + self.forecast_len])
 
