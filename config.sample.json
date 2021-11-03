@@ -15,7 +15,9 @@
         "observed_len": 28,
         "forecast_len": 28,
 
-        "verbosity": 0
+        "verbosity": 0,
+
+        "prediction": true
     },
     
     "dataset": {
