@@ -73,6 +73,7 @@ class TIMEBANDDashboard:
         self.lower = self.observed
         self.upper = self.observed
         self.output = self.observed
+        self.times = self.dataset.times
 
         self.fig, self.axes = fig, axes
 
@@ -121,16 +122,16 @@ class TIMEBANDDashboard:
 
                     ax.plot(
                         true_ticks,
+                        self.reals[START:OBSRV, col],
+                        color=color,
+                        label=f"Real {feature_label}",
+                    )
+                    ax.plot(
+                        true_ticks,
                         self.output[START:OBSRV, col],
                         color="black",
                         linewidth=2,
                         label=f"Imputed {feature_label}",
-                    )
-                    ax.plot(
-                        true_ticks,
-                        self.reals[START:OBSRV, col],
-                        color=color,
-                        label=f"Real {feature_label}",
                     )
                     ax.plot(
                         pred_ticks,
@@ -159,6 +160,7 @@ class TIMEBANDDashboard:
         for i in range(len(self.axes)):
             self.axes[i].clear()
             self.axes[i].set_ylim(auto=True)
+            self.axes[i].grid()
 
         return self.fig, self.axes
 
