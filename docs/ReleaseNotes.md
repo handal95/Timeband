@@ -3,6 +3,19 @@
 Forecasting on **multivariable** Time Series data
 
 ---
+### November 4, 2021 / v2.2.1
+#### New Features
+- Refactoring related to config settings
+- Modify dashboard visualization (grid and plot order)
+- Distinguish between BEST model and regularly saved model
+- Use median value instead of band's border for anomaly adjustment
+- Visualization options can be set during the learning process
+
+#### Bug Fixes
+- Fix last data error in windowing
+- Refactor for Dataset architecture
+
+---
 ### October 28, 2021 / v2.2
 #### New Features
 - File output with missing value imputation and anomaly correction
