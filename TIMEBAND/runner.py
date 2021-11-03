@@ -62,7 +62,7 @@ class TIMEBANDRunner:
 
         # Prediction
         self.idx = 0
-        self.data_labeling()
+        # self.data_labeling()
         self.pred_initate()
 
         # Dashboard
@@ -121,11 +121,11 @@ class TIMEBANDRunner:
 
             lmask = value < lower[p]
             umask = value > upper[p]
-            mmask = masks[p] * (lmask + umask)
+            mmask = masks[p]
 
+            value = (1 - lmask) * value + lmask * (b * preds[p] + (1 - b) * value)
+            value = (1 - umask) * value + umask * (b * preds[p] + (1 - b) * value)
             value = (1 - mmask) * value + mmask * (a * preds[p] + (1 - a) * output[p])
-            value = (1 - lmask) * value + lmask * (b * lower[p] + (1 - b) * value)
-            value = (1 - umask) * value + umask * (b * upper[p] + (1 - b) * value)
 
             output[p + 1] = value
 
