@@ -13,7 +13,10 @@ Forecasting on **multivariable** Time Series data
 
 #### Bug Fixes
 - Fix last data error in windowing
-- Refactor for Dataset architecture
+
+### November 4, 2021 / Hotfix
+- hotfix `adjust` logic in Timeband trainer 
+   - Synchronize execution logic with runner 
 
 ---
 ### October 28, 2021 / v2.2
