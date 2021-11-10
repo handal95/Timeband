@@ -11,8 +11,8 @@ class Dataset:
     def __len__(self):
         return self.length
 
-    def shape(self, target = "encode"):
-        return self.encoded.shape if target == "encode" else  self.decoded.shape
+    def shape(self, target="encode"):
+        return self.encoded.shape if target == "encode" else self.decoded.shape
 
     def __getitem__(self, idx):
         data = {

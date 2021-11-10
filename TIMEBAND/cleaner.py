@@ -97,8 +97,8 @@ class TIMEBANDCleaner:
 
             output = np.concatenate([outputs[-1:], reals])
             target = self.adjust(output, preds, masks, lower, upper)
-            lower_bands = np.concatenate([lower_bands[:1 - forecast_len], lower])
-            upper_bands = np.concatenate([upper_bands[:1 - forecast_len], upper])
+            lower_bands = np.concatenate([lower_bands[: 1 - forecast_len], lower])
+            upper_bands = np.concatenate([upper_bands[: 1 - forecast_len], upper])
             outputs = np.concatenate([outputs[: 1 - forecast_len], target])
 
             # #######################
@@ -119,9 +119,11 @@ class TIMEBANDCleaner:
         outputs_df = pd.DataFrame(outputs, columns=self.dataset.targets, index=index)
 
         bands_df = pd.concat(
-            [pd.DataFrame(lower_bands, columns=lower_cols, index=index),
-            pd.DataFrame(upper_bands, columns=upper_cols, index=index)],
-            axis=1
+            [
+                pd.DataFrame(lower_bands, columns=lower_cols, index=index),
+                pd.DataFrame(upper_bands, columns=upper_cols, index=index),
+            ],
+            axis=1,
         )
         bands_df.index.name = self.dataset.time_index
         outputs_df.index.name = self.dataset.time_index

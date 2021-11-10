@@ -205,7 +205,7 @@ class TIMEBANDTrainer:
             pred_len = preds.shape[0]
             reals = self.dataset.forecast[self.idx : self.idx + pred_len]
             masks = self.dataset.missing[self.idx : self.idx + pred_len]
-            
+
             output = np.concatenate([outputs[-1:], reals])
             target = self.adjust(output, preds, masks, lower, upper)
             outputs = np.concatenate([outputs[: 1 - forecast_len], target])

@@ -119,7 +119,7 @@ class TIMEBANDDataset:
         data.interpolate(method="ffill", inplace=True)
         data.to_csv(os.path.join(self.basepath, "interpolated.csv"))
         data.replace(np.nan, 0, inplace=True)
-        
+
         # Observed Data & Forecast Data
         observed = data[self.targets][: self.observed_len + self.forecast_len - 1]
         forecast = data[self.targets][self.observed_len :]
@@ -183,9 +183,13 @@ class TIMEBANDDataset:
         self.trainset = trainset
 
         # Feature info
-        logger.info(f"  - Split Rate : T {self.split_rate:.3f} V {1 - self.split_rate:.3f}")
+        logger.info(
+            f"  - Split Rate : T {self.split_rate:.3f} V {1 - self.split_rate:.3f}"
+        )
         logger.info(f"  - Data shape : T {trainset.shape()}, V {validset.shape()}")
-        logger.info(f"  - Data shape : T {trainset.shape('decode')}, V {validset.shape('decode')}")
+        logger.info(
+            f"  - Data shape : T {trainset.shape('decode')}, V {validset.shape('decode')}"
+        )
 
         return trainset, validset
 
@@ -194,7 +198,7 @@ class TIMEBANDDataset:
         Windowing data
 
         """
-        
+
         observed = []
         forecast = []
 
@@ -240,7 +244,7 @@ class TIMEBANDDataset:
     def get_random(self) -> tuple((torch.tensor, torch.tensor)):
         """
         Get Random data in trainset for `critic`
-        
+
         """
         rand_scope = self.trainset.length - self.forecast_len
         idx = np.random.randint(rand_scope)
@@ -251,7 +255,6 @@ class TIMEBANDDataset:
         decoded = data["decoded"].to(self.device)
 
         return encoded, decoded
-
 
     ###############
     # Init preprocessed methods
@@ -302,9 +305,9 @@ class TIMEBANDDataset:
         # So, using min/max information only 90% of dataset
         # and give a small margin was set based on the observed values.
         split_idx = int(len(data) * 0.9)
-        min_val = data[:split_idx].min() * 0.95 
+        min_val = data[:split_idx].min() * 0.95
         max_val = data[:split_idx].max() * 1.05
-        
+
         minmax_df = pd.DataFrame([data.columns, min_val, max_val]).T
         minmax_df.columns = ["Features", "min", "max"]
         minmax_df.to_csv(self.minmax_path, index=False)
