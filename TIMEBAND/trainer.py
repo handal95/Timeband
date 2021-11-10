@@ -36,7 +36,6 @@ class TIMEBANDTrainer:
 
         # Set Config
         config = self.set_config(config=config)
-
         self.forecast_len = self.dataset.forecast_len
 
     def set_config(self, config: dict = None) -> dict:
@@ -57,12 +56,6 @@ class TIMEBANDTrainer:
         self.lr_decay = config["learning_rate"]["decay"]
         self.lr_gammaG = config["learning_rate"]["gammaG"]
         self.lr_gammaD = config["learning_rate"]["gammaD"]
-
-        self.trainer_config = config["epochs"]
-        self.epochs = config["epochs"]["iter"]
-        self.base_epochs = config["epochs"]["base"]
-        self.iter_epochs = config["epochs"]["iter"]
-        self.iter_critic = config["epochs"]["critic"]
 
         # Models options
         self.reload_option = config["models"]["reload"]
@@ -98,8 +91,7 @@ class TIMEBANDTrainer:
         # Score plot
         train_score_plot = []
         valid_score_plot = []
-        EPOCHS = self.base_epochs + self.iter_epochs
-        for epoch in range(self.base_epochs, EPOCHS):
+        for epoch in range(self.epochs):
             # Model Settings
             paramD, lrD = self.models.netD.parameters(), self.lr * self.lr_gammaD
             paramG, lrG = self.models.netG.parameters(), self.lr * self.lr_gammaG
@@ -119,11 +111,17 @@ class TIMEBANDTrainer:
             valid_score = self.train_step(epoch, validset, training=False)
             valid_score_plot.append(valid_score)
 
-            self.model_update(epoch, valid_score)
+            if (epoch + 1) % self.print_interval == 0:
+                logger.info(
+                    f"[Ep {epoch + 1}] T ({train_score:.4f}) V ({valid_score:.4f})",
+                    level=1,
+                )
+
+            if train_score - valid_score < train_score * 0.25:
+                self.model_update(epoch, valid_score)
             self.dashboard.clear_figure()
 
-        self.models.load("BEST")
-        self.models.save(best=True)
+        self.model_update(epoch, valid_score)
 
     def train_step(self, epoch: int, dataset: DataLoader, training: bool = True):
         def discriminate(x):
@@ -144,7 +142,7 @@ class TIMEBANDTrainer:
             if training:
                 paramD, lrD = self.models.netD.parameters(), self.lr * self.lr_gammaD
                 optimD = RMSprop(paramD, lr=lrD)
-                for _ in range(self.iter_critic):
+                for _ in range(self.critic):
                     # Load Random Sample Data
                     true_x, true_y = self.dataset.get_random()
                     fake_y = generate(true_x)
@@ -176,7 +174,6 @@ class TIMEBANDTrainer:
             Dy = discriminate(true_y)
             DGx = discriminate(fake_y)
 
-            # masked = (1 - mask_y) * true_y + mask_y * fake_y
             if training:
                 errD = self.losses.dis_loss(true_y, fake_y, Dy, DGx)
                 errD.backward()
@@ -191,7 +188,6 @@ class TIMEBANDTrainer:
             fake_y = generate(true_x)
             DGx = self.models.netD(fake_y)
 
-            # masked = (1 - mask_y) * true_y + mask_y * fake_y
             if training:
                 errG = self.losses.gen_loss(true_y, fake_y, DGx)
                 errG.backward()
@@ -209,16 +205,17 @@ class TIMEBANDTrainer:
             pred_len = preds.shape[0]
             reals = self.dataset.forecast[self.idx : self.idx + pred_len]
             masks = self.dataset.missing[self.idx : self.idx + pred_len]
-            self.idx += batchs
-
+            
             output = np.concatenate([outputs[-1:], reals])
             target = self.adjust(output, preds, masks, lower, upper)
             outputs = np.concatenate([outputs[: 1 - forecast_len], target])
+            self.idx += batchs
 
             # #######################
             # Visualize
             # #######################
-            self.dashboard.vis(batchs, reals, preds, lower, upper, target)
+            if not training:
+                self.dashboard.vis(batchs, reals, preds, lower, upper, target)
 
             # #######################
             # Scoring
@@ -248,7 +245,7 @@ class TIMEBANDTrainer:
 
             lmask = value < lower[p]
             umask = value > upper[p]
-            mmask = masks[p] * (lmask + umask)
+            mmask = masks[p]
 
             value = (1 - lmask) * value + lmask * (b * preds[p] + (1 - b) * value)
             value = (1 - umask) * value + umask * (b * preds[p] + (1 - b) * value)

@@ -14,12 +14,13 @@ from TIMEBAND.dashboard import TIMEBANDDashboard
 
 logger = None
 
+# Anomaly Labels
 UPPER_ANOMALY = -1
 MISSING_VALUE = 0
 LOWER_ANOMALY = 1
 
 
-class TIMEBANDRunner:
+class TIMEBANDCleaner:
     def __init__(
         self,
         config: dict,
@@ -52,12 +53,9 @@ class TIMEBANDRunner:
         """
 
         # Train option
-        self.__dict__ = {
-            **config,
-            **self.__dict__,
-        }
+        self.__dict__ = {**config, **self.__dict__}
 
-    def run(self, dataset: DataLoader) -> None:
+    def clean(self, dataset: DataLoader) -> None:
         logger.info("RUN the model")
 
         # Prediction
@@ -74,6 +72,9 @@ class TIMEBANDRunner:
 
         tqdm_ = tqdm(dataset)
         outputs = self.dataset.observed
+        lower_bands = self.dataset.observed
+        upper_bands = self.dataset.observed
+
         for i, data in enumerate(tqdm_):
             true_x = data["encoded"].to(self.device)
             true_y = data["decoded"].to(self.device)
@@ -96,20 +97,36 @@ class TIMEBANDRunner:
 
             output = np.concatenate([outputs[-1:], reals])
             target = self.adjust(output, preds, masks, lower, upper)
+            lower_bands = np.concatenate([lower_bands[:1 - forecast_len], lower])
+            upper_bands = np.concatenate([upper_bands[:1 - forecast_len], upper])
             outputs = np.concatenate([outputs[: 1 - forecast_len], target])
 
             # #######################
             # Visualize
             # #######################
-            self.dashboard.vis(batchs, reals, preds, lower, upper, target)
+            if i > 8:
+                self.dashboard.vis(batchs, reals, preds, lower, upper, target)
             self.idx += batchs
 
         # Dashboard
         self.dashboard.clear_figure()
-        outputs = pd.DataFrame(
-            outputs, columns=self.dataset.targets, index=self.dataset.times
+
+        # OUTPUTS
+        lower_cols = [f"{x}_lower" for x in self.dataset.targets]
+        upper_cols = [f"{x}_upper" for x in self.dataset.targets]
+
+        index = self.dataset.times
+        outputs_df = pd.DataFrame(outputs, columns=self.dataset.targets, index=index)
+
+        bands_df = pd.concat(
+            [pd.DataFrame(lower_bands, columns=lower_cols, index=index),
+            pd.DataFrame(upper_bands, columns=upper_cols, index=index)],
+            axis=1
         )
-        return outputs
+        bands_df.index.name = self.dataset.time_index
+        outputs_df.index.name = self.dataset.time_index
+
+        return outputs_df, bands_df
 
     def adjust(self, output, preds, masks, lower, upper):
         len = preds.shape[0]
@@ -183,22 +200,3 @@ class TIMEBANDRunner:
         self.labels.to_csv(labels_path)
 
         logger.info(f"CSV saved at {labels_path}")
-
-
-def desc(training, epoch, score, losses):
-    process = "Train" if training else "Valid"
-
-    if not training:
-        score["SCORE"] = colorstr("bright_red", score["SCORE"])
-        score["RMSE"] = colorstr("bright_blue", score["RMSE"])
-        score["NMAE"] = colorstr("bright_red", score["NMAE"])
-        losses["L1"] = colorstr("bright_blue", losses["L1"])
-        losses["L2"] = colorstr("bright_blue", losses["L2"])
-        losses["GP"] = colorstr("bright_blue", losses["GP"])
-
-    return (
-        f"[{process} e{epoch + 1:4d}] "
-        f"Score {score['SCORE']} ( NME {score['NME']} / NMAE {score['NMAE']} / RMSE {score['RMSE']} ) "
-        f"D {losses['D']} ( R {losses['R']} F {losses['F']} ) "
-        f"G {losses['G']} ( G {losses['G_']} L1 {losses['L1']} L2 {losses['L2']} GP {losses['GP']} )"
-    )
