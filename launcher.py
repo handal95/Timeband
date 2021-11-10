@@ -29,13 +29,13 @@ def load_config(config_path: str = "config.json"):
         config = json.load(f)
     config = Parser(config).config
 
-    config = setting_path(config)
+    return config
 
+
+def save_config(config, config_path: str = "config.json"):
     config_path = os.path.join(config["core"]["path"], config_path)
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False)
-
-    return config
 
 
 def setting_path(config: dict) -> dict:
@@ -47,13 +47,13 @@ def setting_path(config: dict) -> dict:
         - logs   : log files path
     """
 
-    OUTPUT_ROOT = config["core"]["outputs"]
+    ROOT_DIR = config["core"]["directory"]
     DATA_NAME = config["core"]["data_name"]
     MODEL_TAG = config["core"]["TAG"]
 
-    output_path = os.path.join(OUTPUT_ROOT, DATA_NAME)
+    output_path = os.path.join(ROOT_DIR, DATA_NAME)
     models_path = os.path.join(output_path, MODEL_TAG)
-    os.mkdir(OUTPUT_ROOT) if not os.path.exists(OUTPUT_ROOT) else None
+    os.mkdir(ROOT_DIR) if not os.path.exists(ROOT_DIR) else None
     os.mkdir(output_path) if not os.path.exists(output_path) else None
 
     config["core"]["path"] = models_path
@@ -88,7 +88,12 @@ def launcher():
     """
 
     config = load_config()
+
     SEED = config.get("seed", 31)
+
+    config = setting_path(config)
+    save_config(config)
+
     TAG = config["core"]["TAG"]
 
     logger = Logger(config["core"]["logs_path"], config["core"]["verbosity"])
@@ -105,25 +110,34 @@ def launcher():
     logger.info(f"  VERBOSITY   : {config['core']['verbosity']} ")
 
     logger.info("** TIMEBAND Setting **")
-    model = TIMEBANDCore(config=config)
+    core = TIMEBANDCore(config=config)
 
     # Run Model Trainning
-    logger.info("** Model   Training **")
     try:
         if config["train_mode"]:
-            model.train()
+            logger.info("*********************")
+            logger.info("** Model  Training **")
+            logger.info("*********************")
+
+            core.train()
+
+        if config["clean_mode"]:
+            logger.info("*********************")
+            logger.info("**   Cleansing     **")
+            logger.info("*********************")
+
+            core.clean()
+
+        if config["preds_mode"]:
+            logger.info("*********************")
+            logger.info("**   Predicting    **")
+            logger.info("*********************")
+
+            core.predict()
+
     except KeyboardInterrupt:
         print("Abort!")
-
-    logger.info("*********************")
-    logger.info("- Model Output -")
-    logger.info("*********************")
-    try:
-        if config["run_mode"]:
-            model.run()
-    except KeyboardInterrupt:
-        print("Abort!")
-
+            
 
 if __name__ == "__main__":
     launcher()

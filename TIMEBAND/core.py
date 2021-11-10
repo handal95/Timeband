@@ -1,5 +1,5 @@
 import os
-import torch
+import pandas as pd
 
 from torch.utils.data import DataLoader
 from TIMEBAND.loss import TIMEBANDLoss
@@ -7,7 +7,8 @@ from TIMEBAND.model import TIMEBANDModel
 from TIMEBAND.metric import TIMEBANDMetric
 from TIMEBAND.dataset import TIMEBANDDataset
 from TIMEBAND.trainer import TIMEBANDTrainer
-from TIMEBAND.runner import TIMEBANDRunner
+from TIMEBAND.cleaner import TIMEBANDCleaner
+from TIMEBAND.predictor import TIMEBANDPredictor
 from TIMEBAND.dashboard import TIMEBANDDashboard
 
 logger = None
@@ -15,9 +16,11 @@ logger = None
 
 class TIMEBANDCore:
     """
-    TIMEBANDBand : Timeseries Analysis using GAN Band
-
-    The Model for Detecting anomalies / Imputating missing value in timeseries data
+    TIMEBAND : Improving quality of Time series dataset based on LSTM-GAN
+        - train()   : Pattern learning and Predicting of data
+        - clean()   : Imputating Missing value and adjusting Anomaly value in data
+                        for improving quality of raw data
+        - predict() : Prediciting Future data
 
     """
 
@@ -55,9 +58,13 @@ class TIMEBANDCore:
         self.losses_cfg = {**config["core"], **config["losses"]}
         self.trainer_cfg = {**config["core"], **config["trainer"]}
         self.dashboard_cfg = {**config["core"], **config["dashboard"]}
-        self.runner_cfg = {**config["core"], **config["trainer"]}
+        self.cleaner_cfg = {**config["core"], **config["trainer"]}
+        self.predictor_cfg = {**config["core"], **config["trainer"]}
 
-        self.output_path = os.path.join(self.outputs, self.data_name, self.TAG)
+        self.output_path = os.path.join(self.directory, self.data_name, self.TAG)
+        self.cleanset_path = os.path.join(self.output_path, "cleaned_set.csv")
+        self.bands_path = os.path.join(self.output_path, "bands_data.csv")
+        self.predicted_path = os.path.join(self.output_path, "predicted_set.csv")
 
     def train(self) -> None:
         # Init the models
@@ -79,7 +86,7 @@ class TIMEBANDCore:
                 self.models.load("BEST")
 
             # Dataset
-            trainset, validset = self.dataset.prepare_dataset(k + 1)
+            trainset, validset = self.dataset.prepare_dataset(0, k + 1)
             trainset, validset = self.loader(trainset), self.loader(validset)
 
             # Model
@@ -87,12 +94,14 @@ class TIMEBANDCore:
 
             logger.info(f"Done ({k + 1}/{self.dataset.sliding_step + 1}) ")
 
-    def run(self) -> None:
+    def clean(self) -> None:
         # Init the models
         self.models.initiate(dims=self.dataset.dims)
+        if self.pretrain:
+            self.models.load("BEST")
 
-        self.runner = TIMEBANDRunner(
-            self.runner_cfg,
+        self.cleaner = TIMEBANDCleaner(
+            self.cleaner_cfg,
             self.dataset,
             self.models,
             self.losses,
@@ -100,18 +109,42 @@ class TIMEBANDCore:
             self.dashboard,
         )
 
+        # Dataset
+        dataset = self.dataset.prepare_dataset(split=False)
+        dataset = self.loader(dataset)
+
+        cleaned_data, band_data = self.cleaner.clean(dataset)
+        cleaned_data.to_csv(self.cleanset_path)
+        band_data.to_csv(self.bands_path)
+
+        logger.info(f"Cleaned Data saved at {self.cleanset_path}")
+        logger.info(f"Bands Data saved at {self.bands_path}")
+
+    def predict(self):
+        # Init the models
+        self.models.initiate(dims=self.dataset.dims)
         if self.pretrain:
             self.models.load("BEST")
 
-        dataset = self.dataset.prepare_testset()
-        dataset = self.loader(dataset)
+        self.predictor = TIMEBANDPredictor(
+            self.cleaner_cfg,
+            self.dataset,
+            self.models,
+            self.losses,
+            self.metric,
+            self.dashboard,
+        )
 
-        target_path = os.path.join(self.output_path, "target.csv")
-        target_output = self.runner.run(dataset)
-        target_output.to_csv(target_path)
+        dataset = self.dataset.prepare_dataset(split=False)
+        dataset = self.loader(dataset, batch_size=1)
 
-        logger.info(f"{target_path} is saved")
+        predicted_data = self.predictor.predict(dataset)
+        predicted_data.to_csv(self.predicted_path)
 
-    def loader(self, dataset: TIMEBANDDataset) -> DataLoader:
-        dataloader = DataLoader(dataset, self.batch_size, num_workers=self.workers)
+        logger.info(f"Predicted Data saved at {self.predicted_path}")
+
+    def loader(self, dataset: TIMEBANDDataset, batch_size=None) -> DataLoader:
+        batch_size = self.batch_size if batch_size is None else batch_size
+
+        dataloader = DataLoader(dataset, batch_size, num_workers=self.workers)
         return dataloader
