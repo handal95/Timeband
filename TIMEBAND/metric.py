@@ -52,8 +52,6 @@ class TIMEBANDMetric:
 
     def RMSE(self, true: tensor, pred: tensor, mask: tensor):
         true, pred = self._masking(true, pred, mask)
-        if self.zero_ignore:
-            true, pred = self._ignore_zero(true, pred)
 
         mean_squared_error = self.mse(true, pred)
         root_mean_squared_error = torch.sqrt(mean_squared_error)

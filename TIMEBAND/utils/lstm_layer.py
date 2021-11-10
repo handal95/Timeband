@@ -30,7 +30,7 @@ class LSTMGenerator(nn.Module):
         self.lstm1 = nn.LSTM(h0_dim, h1_dim, n_layers, batch_first=True)
         self.lstm2 = nn.LSTM(h1_dim, h2_dim, n_layers, batch_first=True)
 
-        self.linear = nn.Sequential(nn.Linear(h2_dim, out_dim), nn.Tanh())
+        self.linear = nn.Sequential(nn.Linear(h2_dim, 2 * out_dim), nn.Tanh())
 
     def forward(self, input):
         h0_dim = self.hidden_dim // 4
@@ -46,7 +46,8 @@ class LSTMGenerator(nn.Module):
         outputs = self.linear(
             recurrent_features.contiguous().view(batch_size * seq_len, self.hidden_dim)
         )
-        outputs = outputs.view(batch_size, seq_len, self.out_dim)
+
+        outputs = outputs.view(batch_size, 2 * seq_len, self.out_dim)
 
         return outputs
 
