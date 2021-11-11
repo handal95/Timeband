@@ -1,14 +1,31 @@
+import numpy as np
 import pandas as pd
 
 
-def time_cycle(data: pd.DataFrame, dt: pd.Series, value: int, name: str, cycle=True):
+def parsing(data: pd.DataFrame, config: dict, dt: pd.Series, name: str):
+    if config[name] is True:
+        time_info = pd.DataFrame({name: dt}, index=data.index)
+        data = pd.concat([time_info, data], axis=1)
 
-    if cycle:
-        value = value / 2
-        time_info = 2 * (abs(value - dt) / value) - 1
-    else:
-        time_info = 2 * (abs(value - dt) / value) - 1
+    return data
 
-    info = pd.DataFrame({name: time_info})
-    info.index = data.index
-    return pd.concat([data, info], axis=1)
+
+def fill_timegap(data: pd.DataFrame, time_index: str):
+    TIMEGAP = data[time_index][1] - data[time_index][0]
+
+    data_len = len(data)
+    for i in range(1, data_len):
+        if data[time_index][i] - data[time_index][i - 1] != TIMEGAP:
+            gap_start = data[time_index][i - 1]
+            gap_end = data[time_index][i] - TIMEGAP
+
+            for i in range((gap_end - gap_start) // TIMEGAP):
+                time = gap_start + (i + 1) * TIMEGAP
+                data = data.append({time_index: time}, ignore_index=True)
+
+    data = data.set_index(time_index).sort_index().reset_index()
+    filled = len(data) - data_len
+
+    print(f"Filling Time Gap :{filled} : timegap : {TIMEGAP}")
+    data.replace(pd.NaT, np.nan, inplace=True)
+    return data

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from tabulate import tabulate
 from .utils.dataset import Dataset
-from .utils.time import time_cycle
+from .utils.time import parsing, fill_timegap
 
 logger = None
 
@@ -21,7 +21,6 @@ class TIMEBANDDataset:
 
         Args:
             config: Dataset configuration dict
-            device: Torch device (cpu / cuda:0)
         """
         global logger
         logger = config["logger"]
@@ -29,20 +28,20 @@ class TIMEBANDDataset:
         # Set Config
         self.set_config(config)
 
+        # Init Dataset
+        self.init_dataset()
+
         # Load Data
-        self.data = self.init_dataset()
+        self.data = self.load_dataset()
 
         # Information
         logger.info(
             f"\n  Dataset: \n"
             f"  - Config    : {config} \n"
-            f"  - File path : {self.csv_path} \n"
             f"  - Time Idx  : {self.time_index} \n"
             f"  - Length    : {self.data_length} \n"
             f"  - Shape(E/D): {self.encode_shape} / {self.decode_shape} \n"
-            f"  - Targets   : {self.targets} ({self.decode_dim} cols) \n"
-            f"  - Cut Scale : Min {self.cutoff['min']}, Max {self.cutoff['max']}"
-            f"  - Input Col : {self.data.columns}",
+            f"  - Targets   : {self.targets} ({self.decode_dim} cols) \n",
             level=0,
         )
 
@@ -58,134 +57,148 @@ class TIMEBANDDataset:
         # Data file configuration
         logger.info("Timeband Dataset Setting")
         self.__dict__ = {**config, **self.__dict__}
-        self.data_path = os.path.join(self.directory, self.data_name)
-        self.missing_path = os.path.join(self.path, "missing_label.csv")
-        self.anomaly_path = os.path.join(self.path, "anomaly_label.csv")
+        self.basepath = os.path.join(self.directory, self.data_name)
 
-    def init_dataset(self) -> pd.DataFrame:
-        # Read csv data
-        self.csv_path = os.path.join(self.directory, f"{self.data_name}.csv")
-        self.origin = data = pd.read_csv(self.csv_path, parse_dates=[self.time_index])
-        data.drop(self.drops, axis=1, inplace=True)
+        self.datapath = os.path.join(self.basepath, "original_data.csv")
+        self.missing_path = os.path.join(self.basepath, "missing_label.csv")
+        self.anomaly_path = os.path.join(self.basepath, "anomaly_label.csv")
+        self.minmax_path = os.path.join(self.basepath, "minmax_info.csv")
+        self.normalized_path = os.path.join(self.basepath, "normalized.csv")
 
-        # Time indexing
-        times = data[self.time_index].dt
+    def init_dataset(self) -> None:
+        """
+        Prepare data and labels for train/analysis
+
+        """
+        ##################
+        # Data Preparing #
+        ##################
+        if not os.path.exists(self.datapath) or self.reset is True:
+            # Read csv data
+            csv_path = os.path.join(self.directory, f"{self.data_name}.csv")
+            data = pd.read_csv(csv_path, parse_dates=[self.time_index])
+            data.drop(self.drops, axis=1, inplace=True)
+
+            # Time indexing
+            data = self.expand_data(data)
+            data = fill_timegap(data, self.time_index) if self.fill_timegap else data
+
+            data.set_index(self.time_index, inplace=True)
+            data.sort_index(ascending=True, inplace=True)
+            data = self.parse_timeinfo(data)
+
+            self.set_minmax_info(data)
+            data.to_csv(self.datapath)
+
+            logger.info(f"  Data has been saved to {self.datapath}")
+
+        if not os.path.exists(self.missing_path) or self.reset is True:
+            # Missing values Labeling
+            missing_label = data.isna().astype(int)
+            missing_label.to_csv(self.missing_path)
+            logger.info(f"  Missing Label has been saved to {self.missing_path}")
+
+        if not os.path.exists(self.anomaly_path) or self.reset is True:
+            # Anomalies Labeling
+            anomaly_label = pd.DataFrame(
+                np.zeros(data.shape), columns=data.columns, index=data.index
+            )
+            anomaly_label.to_csv(self.anomaly_path)
+            logger.info(f"  Anomaly Label has been saved to {self.anomaly_path}")
+
+    def load_dataset(self, datapath: str = None) -> pd.DataFrame:
+        """
+        Load timeseries dataset from {DATA_DIR}/{DATA_NAME}/{DATA_NAME}.csv
+            if not file is exists, save the basic file
+
+        """
+        # Load Dataset
+        datapath = self.datapath if datapath is None else datapath
+        data = pd.read_csv(datapath, parse_dates=[self.time_index])
         data.set_index(self.time_index, inplace=True)
-        data.sort_index(ascending=True, inplace=True)
-        self.times = data.index.strftime(self.time_format).tolist()
+        data.interpolate(method="ffill", inplace=True)
+        data.to_csv(os.path.join(self.basepath, "interpolated.csv"))
+        data.replace(np.nan, 0, inplace=True)
 
-        # Fill time gap
-        target_origin = data[self.targets]
-        data = data.interpolate(method="time")
-
-        # Observed / Forecast
+        # Observed Data & Forecast Data
         observed = data[self.targets][: self.observed_len + self.forecast_len - 1]
         forecast = data[self.targets][self.observed_len :]
         self.observed = torch.from_numpy(observed.to_numpy())
         self.forecast = torch.from_numpy(forecast.to_numpy())
 
-        # Missing Value
-        data = self.impute_zero_value(data) if self.zero_impute else data
-        if os.path.exists(self.missing_path):
-            self.missing_df = pd.read_csv(self.missing_path)
-            self.missing_df.drop(self.time_index, axis=1, inplace=True)
-            self.missing = self.missing_df.to_numpy()
-        else:
-            self.missing = target_origin.isna().astype(int).to_numpy()
-            self.missing[target_origin == 0] = 1 if self.zero_is_missing else 0
-            self.missing_df = pd.DataFrame(
-                self.missing, columns=self.targets, index=data.index
-            )
-            self.missing_df.to_csv(self.missing_path)
-        self.missing = self.missing[self.observed_len :]
-
-        # Anomalies
-        self.anomaly = np.zeros(data[self.targets].shape)
-        self.anomaly[:] = np.nan
-        self.anomaly_df = pd.DataFrame(
-            self.anomaly, columns=self.targets, index=data.index
-        )
-        self.anomaly_df.to_csv(self.anomaly_path)
+        # Label information
+        missing_label = pd.read_csv(self.missing_path)[self.targets]
+        anomaly_label = pd.read_csv(self.anomaly_path)[self.targets]
+        self.missing = missing_label[self.observed_len :].to_numpy()
+        self.anomaly = anomaly_label[self.observed_len :].to_numpy()
 
         # Data Processing
-        data = self.minmax_scaler(data)
-        data = self.normalize(data)
-        # Time Encoding
-        if self.time_info["month"]:
-            # data = self.onehot(data, times.month_name())
-            data = time_cycle(data, times.month, 12, "months")
+        # Min-Max Scaling : 2 * (x - x.min) / (x.max - x.min) - 1
+        minmax_info = pd.read_csv(self.minmax_path, index_col="Features")
+        data = self.normalize(data, minmax_info)
+        data.to_csv(self.normalized_path)
 
-        if self.time_info["weekday"]:
-            # data = self.onehot(data, times.day_name())
-            data = time_cycle(data, times.weekday, 7, "weekday")
-
-        if self.time_info["days"]:
-            data = time_cycle(data, times.day, 31, "days", cycle=False)
-
-        if self.time_info["hours"]:
-            data = time_cycle(data, times.hour, 24, "hours")
-
-        if self.time_info["minutes"]:
-            data = time_cycle(data, times.minute, 60, "minutes")
-
-        # Data shape
+        # Data information
+        self.times = data.index.strftime(self.time_format).tolist()
         self.data_length = data.shape[0]
+
         self.encode_dim = len(data.columns)
         self.decode_dim = len(self.targets)
-        self.dims = {
-            "encode": self.encode_dim,
-            "decode": self.decode_dim,
-        }
+
+        self.dims = {"encode": self.encode_dim, "decode": self.decode_dim}
         self.encode_shape = (self.batch_size, self.observed_len, self.encode_dim)
         self.decode_shape = (self.batch_size, self.forecast_len, self.decode_dim)
 
         return data
 
-    def prepare_dataset(self, k_step: int = 0) -> pd.DataFrame:
+    def prepare_dataset(
+        self, _from: int = 0, k_step: int = 0, split=True
+    ) -> pd.DataFrame:
         # Prepare data
         sliding_len = self.data_length - self.sliding_step + k_step
-        data = self.data[:sliding_len]
+
+        data = self.data[_from:sliding_len]
         data_len = len(data)
 
         # Windowing data
         stop = data_len - self.forecast_len
         encoded, decoded = self.windowing(data, stop)
 
-        # Split dataset
+        if not split:
+            # Dataset Preparing
+            dataset = Dataset(encoded, decoded)
+
+            # Unsplited data shape info
+            logger.info(f" - Data shape : {dataset.shape()}")
+            return dataset
+
+        # Splited dataset
         valid_minlen = int((self.min_valid_scale) * self.forecast_len)
         valid_idx = min(int(data_len * self.split_rate), data_len - valid_minlen)
         split_idx = valid_idx - self.forecast_len - self.observed_len
 
         # Dataset Preparing
-        self.trainset = Dataset(encoded[:split_idx], decoded[:split_idx])
-        self.validset = Dataset(encoded[split_idx:], decoded[split_idx:])
+        trainset = Dataset(encoded[:split_idx], decoded[:split_idx])
+        validset = Dataset(encoded[split_idx:], decoded[split_idx:])
+        self.trainset = trainset
 
         # Feature info
-        self.train_size = self.trainset.encoded.shape[0]
-        self.valid_size = self.validset.encoded.shape[0]
-        logger.info(f"  - Train size : {self.train_size}, Valid size {self.valid_size}")
+        logger.info(
+            f"  - Split Rate : T {self.split_rate:.3f} V {1 - self.split_rate:.3f}"
+        )
+        logger.info(f"  - Data shape : T {trainset.shape()}, V {validset.shape()}")
+        logger.info(
+            f"  - Data shape : T {trainset.shape('decode')}, V {validset.shape('decode')}"
+        )
 
-        return self.trainset, self.validset
-
-    def prepare_testset(self) -> pd.DataFrame:
-        # Prepare data
-        data = self.expand_data(self.data)
-        data_len = len(data)
-
-        # Windowing data
-        stop = data_len - self.forecast_len
-        encoded, decoded = self.windowing(data, stop)
-
-        # Dataset Preparing
-        dataset = Dataset(encoded, decoded)
-
-        # Feature info
-        data_size = dataset.encoded.shape[0]
-        logger.info(f" - Data size : {data_size}")
-
-        return dataset
+        return trainset, validset
 
     def windowing(self, x: pd.DataFrame, stop: int) -> tuple((np.array, np.array)):
+        """
+        Windowing data
+
+        """
+
         observed = []
         forecast = []
 
@@ -199,82 +212,17 @@ class TIMEBANDDataset:
 
         return observed, forecast
 
-    def impute_zero_value(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Impute
-        """
-
-        for col in data:
-            for row in range(len(data[col])):
-                if data[col][row] == 0:
-                    yesterday = data[col][max(0, row - 1)]
-                    last_week = data[col][max(0, row - 7)]
-                    last_year = data[col][max(0, row - 365)]
-                    candidates = [yesterday, last_week, last_year]
-                    try:
-                        while 0 in candidates:
-                            candidates.remove(0)
-                    except ValueError:
-                        pass
-
-                    if len(candidates) == 0:
-                        mean_value = 0
-                    else:
-                        mean_value = np.mean(candidates)
-
-                    data[col][row] = mean_value
-
-        return data
-
-    def minmax_scaler(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Cutted Min Max Scaler
-        """
-        # Data Local
-        self.origin_max = data.max()
-        self.origin_min = data.min()
-
-        min_p, max_p = self.cutoff["min"], self.cutoff["max"]
-
-        for col in data.columns:
-            uniques = sorted(data[col].unique())
-            pivot_min = uniques[max(0, int(len(uniques) * min_p))]
-            pivot_max = uniques[min(-1, -int(len(uniques) * max_p))]
-
-            data[col][data[col] < pivot_min] = pivot_min
-            data[col][data[col] > pivot_max] = pivot_max
-
-        self.encode_min = data.min(0) * (1 - 10 * min_p)
-        self.encode_max = data.max(0) * (1 + 10 * max_p)
-
-        self.decode_min = torch.tensor(self.encode_min[self.targets])
-        self.decode_max = torch.tensor(self.encode_max[self.targets])
-
-        target_col = ["O" if col in self.targets else "" for col in data.columns]
-
-        df = pd.DataFrame(
-            {
-                f"TARGET": target_col,
-                f"origin MIN": self.origin_min,
-                f"cutoff min": self.encode_min,
-                f"origin MAX": self.origin_max,
-                f"cutoff max": self.encode_max,
-            },
-        )
-
-        logger.info(
-            f"Min Max info\n{tabulate(df, headers='keys', floatfmt='.2f')}", level=0
-        )
-
-        return data
-
-    def normalize(self, data: pd.DataFrame) -> pd.DataFrame:
+    def normalize(self, data: pd.DataFrame, minmax: pd.DataFrame) -> pd.DataFrame:
         """Normalize input in [-1,1] range, saving statics for denormalization"""
         # 2 * (x - x.min) / (x.max - x.min) - 1
 
-        data = data - self.encode_min
-        data = data / (self.encode_max - self.encode_min)
-        data = 2 * data - 1
+        encode_min = minmax["min"]
+        encode_max = minmax["max"]
+
+        data = 2 * ((data - encode_min) / (encode_max - encode_min)) - 1
+
+        self.decode_min = torch.tensor(encode_min[self.targets])
+        self.decode_max = torch.tensor(encode_max[self.targets])
 
         return data
 
@@ -293,51 +241,11 @@ class TIMEBANDDataset:
 
         return data
 
-    def onehot(self, data: pd.DataFrame, category: pd.Series) -> pd.DataFrame:
+    def get_random(self) -> tuple((torch.tensor, torch.tensor)):
         """
-        Onehot Encoding
+        Get Random data in trainset for `critic`
+
         """
-        categories = sorted(set(category))
-        n_category = len(categories)
-
-        df = []
-        for value in category:
-            vec = [0] * n_category
-            find = np.where(np.array(categories) == value)[0][0]
-            vec[find] = 1.0
-            df.append(vec)
-
-        encoded = pd.DataFrame(df, columns=categories, index=data.index)
-        return pd.concat([data, encoded], axis=1)
-
-    def expand_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        if self.prediction:
-            times = []
-            gap = data.index[1] - data.index[0]
-            for i in range(self.forecast_len):
-                times.append(data.index[-1] + (i + 1) * gap)
-
-            encode_zero = np.zeros((self.forecast_len, self.encode_dim))
-            decode_zero = np.zeros((self.forecast_len, self.decode_dim))
-            decode_ones = np.ones((self.forecast_len, self.decode_dim))
-
-            item = pd.DataFrame(
-                encode_zero,
-                columns=self.data.columns,
-                index=times,
-            )
-            data = pd.concat([data, item], axis=0)
-
-            self.missing = np.concatenate([self.missing, decode_ones])
-            self.anomaly = np.concatenate([self.anomaly, decode_zero])
-            self.forecast = torch.from_numpy(
-                np.concatenate([self.forecast.detach().numpy(), decode_zero])
-            )
-            self.times = data.index.strftime(self.time_format).tolist()
-
-        return data
-
-    def get_random(self):
         rand_scope = self.trainset.length - self.forecast_len
         idx = np.random.randint(rand_scope)
 
@@ -347,3 +255,64 @@ class TIMEBANDDataset:
         decoded = data["decoded"].to(self.device)
 
         return encoded, decoded
+
+    ###############
+    # Init preprocessed methods
+    ###############
+    def expand_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """"""
+        (data_len, encode_dim) = data.shape
+        expand_data = pd.DataFrame(
+            np.zeros((self.forecast_len, encode_dim)),
+            columns=data.columns,
+        ).replace(0, np.nan)
+
+        time_index = data[self.time_index]
+
+        timegap = time_index[1] - time_index[0]
+        time_index = data[self.time_index][data_len - 1]
+        for i in range(self.forecast_len):
+            time_index = time_index + timegap
+            expand_data[self.time_index][i] = time_index
+
+        data = pd.concat([data, expand_data], axis=0)
+
+        return data
+
+    def parse_timeinfo(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        From time index column, parse date-time properties
+
+        """
+        datetime = data.index  # datetime information
+
+        data = parsing(data, self.time_encode, datetime.year, name="year")
+        data = parsing(data, self.time_encode, datetime.month, name="month")
+        data = parsing(data, self.time_encode, datetime.day, name="day")
+        data = parsing(data, self.time_encode, datetime.weekday, name="weekday")
+        data = parsing(data, self.time_encode, datetime.hour, name="hour")
+        data = parsing(data, self.time_encode, datetime.minute, name="minute")
+
+        return data
+
+    def set_minmax_info(self, data: pd.DataFrame) -> None:
+        """
+        Set Min-Max information for data scaling
+
+        """
+
+        # the min-max value of the data to be actually received afterward is unknown
+        # So, using min/max information only 90% of dataset
+        # and give a small margin was set based on the observed values.
+        split_idx = int(len(data) * 0.9)
+        min_val = data[:split_idx].min() * 0.95
+        max_val = data[:split_idx].max() * 1.05
+
+        minmax_df = pd.DataFrame([data.columns, min_val, max_val]).T
+        minmax_df.columns = ["Features", "min", "max"]
+        minmax_df.to_csv(self.minmax_path, index=False)
+
+        logger.info(
+            f"Min Max info\n{tabulate(minmax_df, headers='keys', floatfmt='.2f')}",
+            level=0,
+        )

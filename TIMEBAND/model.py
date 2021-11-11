@@ -71,21 +71,28 @@ class TIMEBANDModel:
                 self.netD, self.netG = torch.load(netD_path), torch.load(netG_path)
             else:
                 logger.warn(f" - {postfix} Model Loading Fail")
+                self.load() if postfix != "" else None
 
         return self.netD, self.netG
 
     def save(self, postfix: str = "", best: bool = False) -> None:
-        netD_path = self.get_path("netD", postfix)
-        netG_path = self.get_path("netG", postfix)
-
         if self.save_opt:
+            netD_path = self.get_path("netD", postfix)
+            netG_path = self.get_path("netG", postfix)
+
             if best:
-                best_netD_path = self.get_path("netD", "BEST")
-                best_netG_path = self.get_path("netG", "BEST")
-                torch.save(self.netD, best_netD_path)
-                torch.save(self.netG, best_netG_path)
+                # Saving model with score tag
+                torch.save(self.netD, netD_path)
+                torch.save(self.netG, netG_path)
+
+                # Saving model with BEST tag
+                netD_path = self.get_path("netD", "BEST")
+                netG_path = self.get_path("netG", "BEST")
+                torch.save(self.netD, netD_path)
+                torch.save(self.netG, netG_path)
                 postfix = f"Best({postfix})"
             else:
+                # Regulary saving model
                 torch.save(self.netD, netD_path)
                 torch.save(self.netG, netG_path)
 

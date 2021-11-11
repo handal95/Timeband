@@ -14,12 +14,13 @@ from TIMEBAND.dashboard import TIMEBANDDashboard
 
 logger = None
 
+# Anomaly Labels
 UPPER_ANOMALY = -1
 MISSING_VALUE = 0
 LOWER_ANOMALY = 1
 
 
-class TIMEBANDRunner:
+class TIMEBANDPredictor:
     def __init__(
         self,
         config: dict,
@@ -47,18 +48,15 @@ class TIMEBANDRunner:
         Configure settings related to the data set.
 
         params:
-            config: Trainer configuration dict
-                `config['trainer']`
+            config: Predictor configuration dict
+                `config['predictor']`
         """
 
-        # Train option
-        self.__dict__ = {
-            **config,
-            **self.__dict__,
-        }
+        # Predicts option
+        self.__dict__ = {**config, **self.__dict__}
 
-    def run(self, dataset: DataLoader) -> None:
-        logger.info("RUN the model")
+    def predict(self, dataset: DataLoader) -> None:
+        logger.info("Predicts the forecast data")
 
         # Prediction
         self.idx = 0
@@ -97,18 +95,14 @@ class TIMEBANDRunner:
             output = np.concatenate([outputs[-1:], reals])
             target = self.adjust(output, preds, masks, lower, upper)
             outputs = np.concatenate([outputs[: 1 - forecast_len], target])
-
-            # #######################
-            # Visualize
-            # #######################
-            self.dashboard.vis(batchs, reals, preds, lower, upper, target)
             self.idx += batchs
 
         # Dashboard
         self.dashboard.clear_figure()
-        outputs = pd.DataFrame(
-            outputs, columns=self.dataset.targets, index=self.dataset.times
-        )
+        outputs = outputs  # [-self.forecast_len:]
+        indexes = self.dataset.times  # [-self.forecast_len:]
+        outputs = pd.DataFrame(outputs, columns=self.dataset.targets, index=indexes)
+
         return outputs
 
     def adjust(self, output, preds, masks, lower, upper):
@@ -121,7 +115,7 @@ class TIMEBANDRunner:
 
             lmask = value < lower[p]
             umask = value > upper[p]
-            mmask = masks[p]
+            mmask = masks[p] * (lmask + umask)
 
             value = (1 - lmask) * value + lmask * (b * preds[p] + (1 - b) * value)
             value = (1 - umask) * value + umask * (b * preds[p] + (1 - b) * value)
@@ -183,22 +177,3 @@ class TIMEBANDRunner:
         self.labels.to_csv(labels_path)
 
         logger.info(f"CSV saved at {labels_path}")
-
-
-def desc(training, epoch, score, losses):
-    process = "Train" if training else "Valid"
-
-    if not training:
-        score["SCORE"] = colorstr("bright_red", score["SCORE"])
-        score["RMSE"] = colorstr("bright_blue", score["RMSE"])
-        score["NMAE"] = colorstr("bright_red", score["NMAE"])
-        losses["L1"] = colorstr("bright_blue", losses["L1"])
-        losses["L2"] = colorstr("bright_blue", losses["L2"])
-        losses["GP"] = colorstr("bright_blue", losses["GP"])
-
-    return (
-        f"[{process} e{epoch + 1:4d}] "
-        f"Score {score['SCORE']} ( NME {score['NME']} / NMAE {score['NMAE']} / RMSE {score['RMSE']} ) "
-        f"D {losses['D']} ( R {losses['R']} F {losses['F']} ) "
-        f"G {losses['G']} ( G {losses['G_']} L1 {losses['L1']} L2 {losses['L2']} GP {losses['GP']} )"
-    )

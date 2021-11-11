@@ -9,7 +9,7 @@ class Parser:
         self.config = self.set_config(config, opt)
 
     def get_parser(self, config) -> Namespace:
-        parser = argparse.ArgumentParser(description="** BandGan CLI **")
+        parser = argparse.ArgumentParser(description="** TIMEBAND CLI **")
         parser.set_defaults(function=None)
 
         # Launcher
@@ -21,11 +21,36 @@ class Parser:
             default=config["train_mode"],
         )
         parser.add_argument(
-            "-rm",
-            "--run_mode",
+            "-cm",
+            "--clean_mode",
+            type=self.str2bool,
+            help="If True, Do the clean",
+            default=config["clean_mode"],
+        )
+        parser.add_argument(
+            "-pm",
+            "--preds_mode",
             type=self.str2bool,
             help="If True, Do the run",
-            default=config["run_mode"],
+            default=config["preds_mode"],
+        )
+
+        # CORE OPTION
+        parser.add_argument(
+            "-b",
+            "--batch_size",
+            type=int,
+            help="train epochs",
+            default=config["core"]["batch_size"],
+        )
+
+        # TRAIN OPTION
+        parser.add_argument(
+            "-ep",
+            "--epochs",
+            type=int,
+            help="train epochs",
+            default=config["trainer"]["epochs"],
         )
 
         # DASHBOARD
@@ -53,8 +78,14 @@ class Parser:
         return parser.parse_args()
 
     def set_config(self, config: dict, parser: Namespace) -> dict:
-        config["run_mode"] = parser.run_mode
         config["train_mode"] = parser.train_mode
+        config["clean_mode"] = parser.clean_mode
+        config["preds_mode"] = parser.preds_mode
+
+        config["core"]["batch_size"] = max(parser.batch_size, 1)
+
+        config["trainer"]["epochs"] = parser.epochs
+
         config["dashboard"]["width"] = parser.dashboard_width
         config["dashboard"]["height"] = parser.dashboard_height
         config["dashboard"]["vis_opt"] = parser.vis_opt
