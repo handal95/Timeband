@@ -25,7 +25,7 @@ def main():
 
     """
     2. 모델 학습로직
-    
+
     """
     # DATA
     model.fit()
@@ -37,16 +37,13 @@ def main():
     del model
     """
     3. 모델 예측
-    
+
     """
-    
+
     with open(CORE_PATH, mode="rb") as f:
         model = pickle.load(f)
 
-    data = pd.read_csv("./data/000060.csv", parse_dates=["Date"])
-    data.set_index("Date", inplace=True)
-
-    line, band = model.predicts(data)
+    line, band = model.predicts()
 
     print(line)
     print("=====")

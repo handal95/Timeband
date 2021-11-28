@@ -73,7 +73,7 @@ class Timeband(TimebandBase):
 
     def fit(self):
         self.models.initiate(dims=self.dataset.dims)
-        
+
         self.trainer = TIMEBANDTrainer(
             self.trainer_cfg,
             self.dataset,
@@ -95,8 +95,6 @@ class Timeband(TimebandBase):
 
             # Model
             self.trainer.train(trainset, validset)
-            
-        pass
 
     def predict(self, data: pd.DataFrame) -> tuple((pd.DataFrame, pd.DataFrame)):
         # (Template) Predicting
@@ -126,8 +124,8 @@ class Timeband(TimebandBase):
             pred_bands = pd.concat([pred_bands, pred_band], axis=1)
 
         return (pred_lines.T, pred_bands.T)
-    
-    def predicts(self, data: pd.DataFrame):
+
+    def predicts(self):
         if self.pretrain:
             self.models.load("BEST")
 
@@ -147,7 +145,7 @@ class Timeband(TimebandBase):
         cleaned_data, band_data = self.cleaner.clean(dataset)
         cleaned_data.to_csv(self.cleanset_path)
         band_data.to_csv(self.bands_path)
-        
+
         return cleaned_data, band_data
 
     def loader(self, dataset: TIMEBANDDataset, batch_size=None) -> DataLoader:
