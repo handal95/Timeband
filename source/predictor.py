@@ -29,8 +29,7 @@ class TIMEBANDPredictor:
         losses: TIMEBANDLoss,
         dashboard: TIMEBANDDashboard,
     ) -> None:
-        global logger
-        logger = config["logger"]
+        self.logger = config["logger"]
 
         self.dataset = dataset
         self.models = models
@@ -55,7 +54,7 @@ class TIMEBANDPredictor:
         self.__dict__ = {**config, **self.__dict__}
 
     def predict(self, dataset: DataLoader) -> None:
-        logger.info("Predicts the forecast data")
+        self.logger.info("Predicts the forecast data")
 
         # Prediction
         self.idx = 0
@@ -170,9 +169,9 @@ class TIMEBANDPredictor:
 
         if self.zero_is_missing:
             self.labels[self.target_data == 0] = MISSING_VALUE
-            logger.info(f"A value of 0 is recognized as a missing value.")
+            self.logger.info(f"A value of 0 is recognized as a missing value.")
 
         labels_path = os.path.join(self.directory, f"{self.data_name}_label.csv")
         self.labels.to_csv(labels_path)
 
-        logger.info(f"CSV saved at {labels_path}")
+        self.logger.info(f"CSV saved at {labels_path}")

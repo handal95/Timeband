@@ -18,9 +18,8 @@ from .dashboard import TIMEBANDDashboard
 
 class TimebandBase:
     def __init__(self):
-        global logger
         self.device = init_device()
-        logger = Logger("logs", 0)
+        self.logger = Logger("logs", 0)
 
 
 class Timeband(TimebandBase):
@@ -31,9 +30,9 @@ class Timeband(TimebandBase):
 
         self.set_config(config)
 
-        logger.info("**********************")
-        logger.info("***** TIME  BAND *****")
-        logger.info("**********************")
+        self.logger.info("**********************")
+        self.logger.info("***** TIME  BAND *****")
+        self.logger.info("**********************")
 
         self.dataset = TIMEBANDDataset(self.dataset_cfg)
         self.models = TIMEBANDModel(self.models_cfg)
@@ -84,7 +83,7 @@ class Timeband(TimebandBase):
         )
 
         for k in range(self.dataset.sliding_step + 1):
-            logger.info(f"Train ({k + 1}/{self.dataset.sliding_step + 1})")
+            self.logger.info(f"Train ({k + 1}/{self.dataset.sliding_step + 1})")
 
             if self.pretrain:
                 self.models.load("BEST")

@@ -23,8 +23,7 @@ class TIMEBANDDataset:
         params:
             config: Dataset configuration dict
         """
-        global logger
-        logger = config["logger"]
+        self.logger = config["logger"]
 
         # Set Config
         self.set_config(config)
@@ -36,7 +35,7 @@ class TIMEBANDDataset:
         self.data = self.load_dataset()
 
         # Information
-        logger.info(
+        self.logger.info(
             f"\n  Dataset: \n"
             f"  - Config    : {config} \n"
             f"  - Time Idx  : {self.time_index} \n"
@@ -56,7 +55,7 @@ class TIMEBANDDataset:
         """
 
         # Data file configuration
-        logger.info("Timeband Dataset Setting")
+        self.logger.info("Timeband Dataset Setting")
         self.__dict__ = {**config, **self.__dict__}
         self.basepath = os.path.join(self.directory, self.data_name)
 
@@ -93,13 +92,13 @@ class TIMEBANDDataset:
             self.minmax_info(data)
             data.to_csv(self.datapath)
 
-            logger.info(f"  Data has been saved to {self.datapath}")
+            self.logger.info(f"  Data has been saved to {self.datapath}")
 
         if not os.path.exists(self.missing_path):
             # Missing values Labeling
             missing_label = data.isna().astype(int)
             missing_label.to_csv(self.missing_path)
-            logger.info(f"  Missing Label has been saved to {self.missing_path}")
+            self.logger.info(f"  Missing Label has been saved to {self.missing_path}")
 
         if not os.path.exists(self.anomaly_path):
             # Anomalies Labeling
@@ -107,7 +106,7 @@ class TIMEBANDDataset:
                 np.zeros(data.shape), columns=data.columns, index=data.index
             )
             anomaly_label.to_csv(self.anomaly_path)
-            logger.info(f"  Anomaly Label has been saved to {self.anomaly_path}")
+            self.logger.info(f"  Anomaly Label has been saved to {self.anomaly_path}")
 
     def interpolate(self, data: pd.DataFrame) -> pd.DataFrame:
         data.interpolate(method="ffill", inplace=True)
@@ -176,7 +175,7 @@ class TIMEBANDDataset:
             dataset = Dataset(encoded, decoded)
 
             # Unsplited data shape info
-            logger.info(f" - Data shape : {dataset.shape()}")
+            self.logger.info(f" - Data shape : {dataset.shape()}")
             return dataset
 
         # Splited dataset
@@ -191,9 +190,9 @@ class TIMEBANDDataset:
         self.trainset = trainset
 
         # Feature info
-        logger.info(f"- Split Rate : T {split_rate:.3f} V {1 - split_rate:.3f}")
-        logger.info(f"- Train shape: T {trainset.shape()},  {trainset.shape('decode')}")
-        logger.info(f"- Valid shape: T {validset.shape()}, {validset.shape('decode')}")
+        self.logger.info(f"- Split Rate : T {split_rate:.3f} V {1 - split_rate:.3f}")
+        self.logger.info(f"- Train shape: T {trainset.shape()},  {trainset.shape('decode')}")
+        self.logger.info(f"- Valid shape: T {validset.shape()}, {validset.shape('decode')}")
 
         return trainset, validset
 
@@ -314,7 +313,7 @@ class TIMEBANDDataset:
 
         minmax_df = pd.DataFrame([data.columns, min_val, max_val]).T
 
-        logger.info(
+        self.logger.info(
             f"Min Max info\n{tabulate(minmax_df, headers='keys', floatfmt='.2f')}",
             level=0,
         )

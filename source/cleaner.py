@@ -11,7 +11,6 @@ from .metric import TIMEBANDMetric
 from .dataset import TIMEBANDDataset
 from .dashboard import TIMEBANDDashboard
 
-logger = None
 
 # Anomaly Labels
 UPPER_ANOMALY = -1
@@ -29,8 +28,7 @@ class TIMEBANDCleaner:
         losses: TIMEBANDLoss,
         dashboard: TIMEBANDDashboard,
     ) -> None:
-        global logger
-        logger = config["logger"]
+        self.logger = config["logger"]
 
         self.dataset = dataset
         self.models = models
@@ -55,7 +53,7 @@ class TIMEBANDCleaner:
         self.__dict__ = {**config, **self.__dict__}
 
     def clean(self, dataset: DataLoader) -> None:
-        logger.info("RUN the model")
+        self.logger.info("RUN the model")
 
         # Prediction
         self.idx = 0
@@ -195,9 +193,9 @@ class TIMEBANDCleaner:
 
         if self.zero_is_missing:
             self.labels[self.target_data == 0] = MISSING_VALUE
-            logger.info(f"A value of 0 is recognized as a missing value.")
+            self.logger.info(f"A value of 0 is recognized as a missing value.")
 
         labels_path = os.path.join(self.directory, f"{self.data_name}_label.csv")
         self.labels.to_csv(labels_path)
 
-        logger.info(f"CSV saved at {labels_path}")
+        self.logger.info(f"CSV saved at {labels_path}")

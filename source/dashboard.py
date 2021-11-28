@@ -28,10 +28,9 @@ class TIMEBANDDashboard:
 
         # Figure and Axis
         self.fig, self.axes = None, None
-        global logger
-        logger = config["logger"]
+        self.logger = config["logger"]
 
-        logger.info(
+        self.logger.info(
             f"\n  Dashboard: \n" f"  - visualize : {self.vis_opt} \n",
             level=0,
         )

@@ -25,8 +25,7 @@ class TIMEBANDTrainer:
         losses: TIMEBANDLoss,
         dashboard: TIMEBANDDashboard,
     ) -> None:
-        global logger
-        logger = config["logger"]
+        self.logger = config["logger"]
 
         self.dataset = dataset
         self.models = models
@@ -79,14 +78,14 @@ class TIMEBANDTrainer:
             self.reload_counts += 1
             if self.reload_counts >= self.reload_interval:
                 self.reload_counts = 0
-                logger.info(
+                self.logger.info(
                     f" - Learning rate decay {self.lr} to {self.lr * self.lr_decay}"
                 )
                 self.lr *= self.lr_decay
                 self.models.load("BEST")
 
     def train(self, trainset: DataLoader, validset: DataLoader) -> None:
-        logger.info("Train the model")
+        self.logger.info("Train the model")
 
         # Score plot
         train_score_plot = []
@@ -112,7 +111,7 @@ class TIMEBANDTrainer:
             valid_score_plot.append(valid_score)
 
             if (epoch + 1) % self.print_interval == 0:
-                logger.info(
+                self.logger.info(
                     f"[Ep {epoch + 1}] T ({train_score:.4f}) V ({valid_score:.4f})",
                     level=1,
                 )
