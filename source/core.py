@@ -51,7 +51,7 @@ class Timeband(TimebandBase):
         """
         # Set Logger
         config["core"]["device"] = self.device
-        config["core"]["logger"] = logger
+        config["core"]["logger"] = self.logger
         config["core"]["targets_dims"] = len(config["dataset"]["targets"])
 
         # Configuration Categories
