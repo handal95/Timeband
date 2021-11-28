@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utils.color import COLORS
-from TIMEBAND.dataset import TIMEBANDDataset
+from ..utils.color import COLORS
+from .dataset import TIMEBANDDataset
 
 plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rc("font", family="Malgun Gothic")

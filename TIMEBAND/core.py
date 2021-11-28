@@ -2,14 +2,14 @@ import os
 import pandas as pd
 
 from torch.utils.data import DataLoader
-from TIMEBAND.loss import TIMEBANDLoss
-from TIMEBAND.model import TIMEBANDModel
-from TIMEBAND.metric import TIMEBANDMetric
-from TIMEBAND.dataset import TIMEBANDDataset
-from TIMEBAND.trainer import TIMEBANDTrainer
-from TIMEBAND.cleaner import TIMEBANDCleaner
-from TIMEBAND.predictor import TIMEBANDPredictor
-from TIMEBAND.dashboard import TIMEBANDDashboard
+from .loss import TIMEBANDLoss
+from .model import TIMEBANDModel
+from .metric import TIMEBANDMetric
+from .dataset import TIMEBANDDataset
+from .trainer import TIMEBANDTrainer
+from .cleaner import TIMEBANDCleaner
+from .predictor import TIMEBANDPredictor
+from .dashboard import TIMEBANDDashboard
 
 logger = None
 

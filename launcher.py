@@ -5,9 +5,9 @@ import random
 import numpy as np
 import pandas as pd
 
-from utils.args import Parser
-from utils.logger import Logger
-from TIMEBAND.core import TIMEBANDCore
+from .utils.args import Parser
+from .utils.logger import Logger
+from .TIMEBAND.core import TIMEBANDCore
 
 
 def seeding(seed=31):
