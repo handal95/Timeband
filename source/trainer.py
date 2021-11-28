@@ -5,7 +5,7 @@ from tqdm import tqdm
 from torch.optim import RMSprop, Adam
 from torch.utils.data import DataLoader
 
-from ..utils.color import colorstr
+from .utils.color import colorstr
 from .loss import TIMEBANDLoss
 from .model import TIMEBANDModel
 from .metric import TIMEBANDMetric
@@ -128,7 +128,8 @@ class TIMEBANDTrainer:
             return self.models.netD(x).to(self.device)
 
         def generate(x):
-            return self.models.netG(x)[:, : self.forecast_len].to(self.device)
+            return self.models.netG(x).to(self.device)
+
 
         losses = self.losses.init_loss()
         score = self.metric.init_score()
@@ -214,8 +215,8 @@ class TIMEBANDTrainer:
             # #######################
             # Visualize
             # #######################
-            if not training:
-                self.dashboard.vis(batchs, reals, preds, lower, upper, target)
+            # if not training:
+            self.dashboard.vis(batchs, reals, preds, lower, upper, target)
 
             # #######################
             # Scoring
@@ -243,13 +244,13 @@ class TIMEBANDTrainer:
         for p in range(len):
             value = output[p + 1]
 
-            lmask = value < lower[p]
-            umask = value > upper[p]
             mmask = masks[p]
+            value = (1 - mmask) * value + mmask * (a * preds[p] + (1 - a) * output[p])
 
+            lmask = (value < lower[p]) * (1 - mmask)
+            umask = (value > upper[p]) * (1 - mmask)
             value = (1 - lmask) * value + lmask * (b * preds[p] + (1 - b) * value)
             value = (1 - umask) * value + umask * (b * preds[p] + (1 - b) * value)
-            value = (1 - mmask) * value + mmask * (a * preds[p] + (1 - a) * output[p])
 
             output[p + 1] = value
 
@@ -299,7 +300,7 @@ def desc(training, epoch, score, losses):
 
     return (
         f"[{process} e{epoch + 1:4d}] "
-        f"NMAE Score {score['NMAE']} ( NME {score['NME']} / RMSE {score['RMSE']} ) "
+        f"(NMAE Score {score['NMAE']} NME {score['NME']} / RMSE {score['RMSE']} ) "
         f"D {losses['D']} ( R {losses['R']} F {losses['F']} ) "
         f"G {losses['G']} ( G {losses['G_']} L1 {losses['L1']} L2 {losses['L2']} GP {losses['GP']} )"
     )

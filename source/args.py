@@ -2,11 +2,26 @@ import argparse
 from argparse import Namespace
 
 
-class Parser:
+class CLIParser:
     def __init__(self, config: dict) -> None:
         opt = self.get_parser(config)
 
         self.config = self.set_config(config, opt)
+
+    def set_config(self, config: dict, parser: Namespace) -> dict:
+        config["train_mode"] = parser.train_mode
+        config["clean_mode"] = parser.clean_mode
+        config["preds_mode"] = parser.preds_mode
+
+        config["core"]["batch_size"] = max(parser.batch_size, 1)
+
+        config["trainer"]["epochs"] = parser.epochs
+
+        config["dashboard"]["width"] = parser.dashboard_width
+        config["dashboard"]["height"] = parser.dashboard_height
+        config["dashboard"]["vis_opt"] = parser.vis_opt
+
+        return config
 
     def get_parser(self, config) -> Namespace:
         parser = argparse.ArgumentParser(description="** TIMEBAND CLI **")
@@ -76,21 +91,6 @@ class Parser:
             default=config["dashboard"]["height"],
         )
         return parser.parse_args()
-
-    def set_config(self, config: dict, parser: Namespace) -> dict:
-        config["train_mode"] = parser.train_mode
-        config["clean_mode"] = parser.clean_mode
-        config["preds_mode"] = parser.preds_mode
-
-        config["core"]["batch_size"] = max(parser.batch_size, 1)
-
-        config["trainer"]["epochs"] = parser.epochs
-
-        config["dashboard"]["width"] = parser.dashboard_width
-        config["dashboard"]["height"] = parser.dashboard_height
-        config["dashboard"]["vis_opt"] = parser.vis_opt
-
-        return config
 
     def str2bool(self, value: str):
         if isinstance(value, bool):
