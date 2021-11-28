@@ -1,9 +1,10 @@
 import os
 import pickle
 import pandas as pd
-from source.args import CLIParser
-from source.core import Timeband
-from source.utils.initiate import seeding, load_config, setting_path
+
+from .source.args import CLIParser
+from .source.core import Timeband
+from .source.utils.initiate import seeding, load_config, setting_path
 
 
 seeding(seed=42)
