@@ -5,14 +5,11 @@ from tqdm import tqdm
 from torch.optim import RMSprop, Adam
 from torch.utils.data import DataLoader
 
-from utils.color import colorstr
-from TIMEBAND.loss import TIMEBANDLoss
-from TIMEBAND.model import TIMEBANDModel
-from TIMEBAND.metric import TIMEBANDMetric
-from TIMEBAND.dataset import TIMEBANDDataset
-from TIMEBAND.dashboard import TIMEBANDDashboard
-
-logger = None
+from .loss import TIMEBANDLoss
+from .model import TIMEBANDModel
+from .metric import TIMEBANDMetric
+from .dataset import TIMEBANDDataset
+from .utils.color import colorstr
 
 
 class TIMEBANDTrainer:
@@ -23,19 +20,15 @@ class TIMEBANDTrainer:
         models: TIMEBANDModel,
         metric: TIMEBANDMetric,
         losses: TIMEBANDLoss,
-        dashboard: TIMEBANDDashboard,
     ) -> None:
-        global logger
-        logger = config["logger"]
+        # Set Config
+        config = self.set_config(config=config)
 
         self.dataset = dataset
         self.models = models
         self.metric = metric
         self.losses = losses
-        self.dashboard = dashboard
 
-        # Set Config
-        config = self.set_config(config=config)
         self.forecast_len = self.dataset.forecast_len
 
     def set_config(self, config: dict = None) -> dict:
@@ -63,31 +56,7 @@ class TIMEBANDTrainer:
         self.reload_interval = config["models"]["reload_interval"]
         self.save_interval = config["models"]["save_interval"]
 
-    def model_update(self, epoch: int, score: float) -> None:
-        # Best Model Save options
-        if score < self.models.best_score:
-            self.reload_counts = -1
-            self.models.best_score = score
-            self.models.save(f"{score:.3f}", best=True)
-
-        # Periodic Save options
-        if (epoch + 1) % self.save_interval == 0:
-            self.models.save()
-
-        # Best Model Reload options
-        if self.reload_option:
-            self.reload_counts += 1
-            if self.reload_counts >= self.reload_interval:
-                self.reload_counts = 0
-                logger.info(
-                    f" - Learning rate decay {self.lr} to {self.lr * self.lr_decay}"
-                )
-                self.lr *= self.lr_decay
-                self.models.load("BEST")
-
     def train(self, trainset: DataLoader, validset: DataLoader) -> None:
-        logger.info("Train the model")
-
         # Score plot
         train_score_plot = []
         valid_score_plot = []
@@ -101,7 +70,6 @@ class TIMEBANDTrainer:
             # Prediction
             self.idx = 0
             self.pred_initate()
-            self.dashboard.init_figure()
 
             # Train Step
             train_score = self.train_step(epoch, trainset, training=True)
@@ -112,14 +80,13 @@ class TIMEBANDTrainer:
             valid_score_plot.append(valid_score)
 
             if (epoch + 1) % self.print_interval == 0:
-                logger.info(
+                self.logger.info(
                     f"[Ep {epoch + 1}] T ({train_score:.4f}) V ({valid_score:.4f})",
                     level=1,
                 )
 
             if train_score - valid_score < train_score * 0.25:
                 self.model_update(epoch, valid_score)
-            self.dashboard.clear_figure()
 
         self.model_update(epoch, valid_score)
 
@@ -128,7 +95,8 @@ class TIMEBANDTrainer:
             return self.models.netD(x).to(self.device)
 
         def generate(x):
-            return self.models.netG(x)[:, : self.forecast_len].to(self.device)
+            return self.models.netG(x).to(self.device)
+
 
         losses = self.losses.init_loss()
         score = self.metric.init_score()
@@ -212,12 +180,6 @@ class TIMEBANDTrainer:
             self.idx += batchs
 
             # #######################
-            # Visualize
-            # #######################
-            if not training:
-                self.dashboard.vis(batchs, reals, preds, lower, upper, target)
-
-            # #######################
             # Scoring
             # #######################
             preds = torch.tensor(preds)
@@ -243,13 +205,13 @@ class TIMEBANDTrainer:
         for p in range(len):
             value = output[p + 1]
 
-            lmask = value < lower[p]
-            umask = value > upper[p]
             mmask = masks[p]
+            lmask = (value < lower[p]) * (1 - mmask)
+            umask = (value > upper[p]) * (1 - mmask)
 
+            value = (1 - mmask) * value + mmask * (a * preds[p] + (1 - a) * output[p])
             value = (1 - lmask) * value + lmask * (b * preds[p] + (1 - b) * value)
             value = (1 - umask) * value + umask * (b * preds[p] + (1 - b) * value)
-            value = (1 - mmask) * value + mmask * (a * preds[p] + (1 - a) * output[p])
 
             output[p + 1] = value
 
@@ -286,6 +248,28 @@ class TIMEBANDTrainer:
 
         return preds, lower, upper
 
+    def model_update(self, epoch: int, score: float) -> None:
+        # Best Model Save options
+        if score < self.models.best_score:
+            self.reload_counts = -1
+            self.models.best_score = score
+            self.models.save(f"{score:.3f}", best=True)
+
+        # Periodic Save options
+        elif (epoch + 1) % self.save_interval == 0:
+            self.models.save()
+
+        # Best Model Reload options
+        elif self.reload_option:
+            self.reload_counts += 1
+            if self.reload_counts >= self.reload_interval:
+                self.reload_counts = 0
+                self.logger.info(
+                    f" - Learning rate decay {self.lr} to {self.lr * self.lr_decay}"
+                )
+                self.lr *= self.lr_decay
+                self.models.load("BEST")
+
 
 def desc(training, epoch, score, losses):
     process = "Train" if training else "Valid"
@@ -299,7 +283,7 @@ def desc(training, epoch, score, losses):
 
     return (
         f"[{process} e{epoch + 1:4d}] "
-        f"NMAE Score {score['NMAE']} ( NME {score['NME']} / RMSE {score['RMSE']} ) "
+        f"(NMAE Score {score['NMAE']} NME {score['NME']} / RMSE {score['RMSE']} ) "
         f"D {losses['D']} ( R {losses['R']} F {losses['F']} ) "
         f"G {losses['G']} ( G {losses['G_']} L1 {losses['L1']} L2 {losses['L2']} GP {losses['GP']} )"
     )

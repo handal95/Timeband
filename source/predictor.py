@@ -5,12 +5,11 @@ import pandas as pd
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-from utils.color import colorstr
-from TIMEBAND.loss import TIMEBANDLoss
-from TIMEBAND.model import TIMEBANDModel
-from TIMEBAND.metric import TIMEBANDMetric
-from TIMEBAND.dataset import TIMEBANDDataset
-from TIMEBAND.dashboard import TIMEBANDDashboard
+from .loss import TIMEBANDLoss
+from .model import TIMEBANDModel
+from .metric import TIMEBANDMetric
+from .dataset import TIMEBANDDataset
+from .dashboard import TIMEBANDDashboard
 
 logger = None
 
@@ -20,7 +19,7 @@ MISSING_VALUE = 0
 LOWER_ANOMALY = 1
 
 
-class TIMEBANDCleaner:
+class TIMEBANDPredictor:
     def __init__(
         self,
         config: dict,
@@ -30,8 +29,6 @@ class TIMEBANDCleaner:
         losses: TIMEBANDLoss,
         dashboard: TIMEBANDDashboard,
     ) -> None:
-        global logger
-        logger = config["logger"]
 
         self.dataset = dataset
         self.models = models
@@ -48,15 +45,15 @@ class TIMEBANDCleaner:
         Configure settings related to the data set.
 
         params:
-            config: Trainer configuration dict
-                `config['trainer']`
+            config: Predictor configuration dict
+                `config['predictor']`
         """
 
-        # Train option
+        # Predicts option
         self.__dict__ = {**config, **self.__dict__}
 
-    def clean(self, dataset: DataLoader) -> None:
-        logger.info("RUN the model")
+    def predict(self, dataset: DataLoader) -> None:
+        self.logger.info("Predicts the forecast data")
 
         # Prediction
         self.idx = 0
@@ -72,9 +69,6 @@ class TIMEBANDCleaner:
 
         tqdm_ = tqdm(dataset)
         outputs = self.dataset.observed
-        lower_bands = self.dataset.observed
-        upper_bands = self.dataset.observed
-
         for i, data in enumerate(tqdm_):
             true_x = data["encoded"].to(self.device)
             true_y = data["decoded"].to(self.device)
@@ -97,38 +91,16 @@ class TIMEBANDCleaner:
 
             output = np.concatenate([outputs[-1:], reals])
             target = self.adjust(output, preds, masks, lower, upper)
-            lower_bands = np.concatenate([lower_bands[: 1 - forecast_len], lower])
-            upper_bands = np.concatenate([upper_bands[: 1 - forecast_len], upper])
             outputs = np.concatenate([outputs[: 1 - forecast_len], target])
-
-            # #######################
-            # Visualize
-            # #######################
-            if i > 8:
-                self.dashboard.vis(batchs, reals, preds, lower, upper, target)
             self.idx += batchs
 
         # Dashboard
         self.dashboard.clear_figure()
+        outputs = outputs  # [-self.forecast_len:]
+        indexes = self.dataset.times  # [-self.forecast_len:]
+        outputs = pd.DataFrame(outputs, columns=self.dataset.targets, index=indexes)
 
-        # OUTPUTS
-        lower_cols = [f"{x}_lower" for x in self.dataset.targets]
-        upper_cols = [f"{x}_upper" for x in self.dataset.targets]
-
-        index = self.dataset.times
-        outputs_df = pd.DataFrame(outputs, columns=self.dataset.targets, index=index)
-
-        bands_df = pd.concat(
-            [
-                pd.DataFrame(lower_bands, columns=lower_cols, index=index),
-                pd.DataFrame(upper_bands, columns=upper_cols, index=index),
-            ],
-            axis=1,
-        )
-        bands_df.index.name = self.dataset.time_index
-        outputs_df.index.name = self.dataset.time_index
-
-        return outputs_df, bands_df
+        return outputs
 
     def adjust(self, output, preds, masks, lower, upper):
         len = preds.shape[0]
@@ -138,9 +110,9 @@ class TIMEBANDCleaner:
         for p in range(len):
             value = output[p + 1]
 
+            mmask = masks[p]
             lmask = value < lower[p]
             umask = value > upper[p]
-            mmask = masks[p]
 
             value = (1 - lmask) * value + lmask * (b * preds[p] + (1 - b) * value)
             value = (1 - umask) * value + umask * (b * preds[p] + (1 - b) * value)
@@ -196,9 +168,9 @@ class TIMEBANDCleaner:
 
         if self.zero_is_missing:
             self.labels[self.target_data == 0] = MISSING_VALUE
-            logger.info(f"A value of 0 is recognized as a missing value.")
+            self.logger.info(f"A value of 0 is recognized as a missing value.")
 
         labels_path = os.path.join(self.directory, f"{self.data_name}_label.csv")
         self.labels.to_csv(labels_path)
 
-        logger.info(f"CSV saved at {labels_path}")
+        self.logger.info(f"CSV saved at {labels_path}")

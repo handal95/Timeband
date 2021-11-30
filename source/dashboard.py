@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utils.color import COLORS
-from TIMEBAND.dataset import TIMEBANDDataset
+from .utils.color import COLORS
+from .dataset import TIMEBANDDataset
 
 plt.rcParams["font.family"] = "Malgun Gothic"
 plt.rc("font", family="Malgun Gothic")
@@ -20,18 +20,16 @@ class TIMEBANDDashboard:
 
         self.times = dataset.times
         self.observed = dataset.observed
-        self.target_cols = dataset.targets
-        self.target_dims = len(self.target_cols)
+        self.visual_cols = self.visual_cols
+        self.target_dims = len(self.visual_cols)
 
         self.observed_len = dataset.observed_len
         self.forecast_len = dataset.forecast_len
 
         # Figure and Axis
         self.fig, self.axes = None, None
-        global logger
-        logger = config["logger"]
 
-        logger.info(
+        self.logger.info(
             f"\n  Dashboard: \n" f"  - visualize : {self.vis_opt} \n",
             level=0,
         )
@@ -60,6 +58,7 @@ class TIMEBANDDashboard:
         size = (self.width, self.height)
 
         fig, axes = plt.subplots(nrows, ncols, figsize=size, clear=True, sharex=True)
+        axes = [axes]
         # fig.tight_layout()
 
         for i, ax in enumerate(axes):
@@ -113,17 +112,17 @@ class TIMEBANDDashboard:
                 ax.axvline(OBSRV - 1, color="red")
                 ax.axvline(FRCST - 1, color="black")
 
-                ax.axvspan(PIVOT, OBSRV - 1, alpha=0.1, label="Observed")
-                ax.axvspan(OBSRV - 1, FRCST - 1, alpha=0.1, color="r", label="Forecast")
+                ax.axvspan(PIVOT, OBSRV - 1, alpha=0.1, label="Observed Window")
+                ax.axvspan(OBSRV - 1, FRCST - 1, alpha=0.1, color="r", label="Forecast Window")
 
                 for col in range(idx_s, idx_e):
-                    feature_label = self.target_cols[col]
+                    feature_label = self.visual_cols[col]
                     color = COLORS[col]
 
                     ax.plot(
                         true_ticks,
                         self.reals[START:OBSRV, col],
-                        color=color,
+                        color="red",
                         label=f"Real {feature_label}",
                     )
                     ax.plot(

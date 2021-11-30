@@ -20,6 +20,8 @@ structlog==21.1.0
 tabulate==0.8.9
 toolz==0.11.1
 torch==1.9.1+cu111
+torchaudio==0.9.1
+torchvision==0.10.1+cu111
 tqdm==4.62.3
 typing-extensions==3.10.0.2
 wcwidth==0.2.5

@@ -20,8 +20,6 @@ class TIMEBANDModel:
             config: Dataset configuration dict
             device: Torch device (cpu / cuda:0)
         """
-        global logger
-        logger = config["logger"]
 
         # Set Config
         self.set_config(config)
@@ -29,7 +27,7 @@ class TIMEBANDModel:
         self.netD = None
         self.netG = None
 
-        logger.info(
+        self.logger.info(
             "\n  Model: \n"
             f"  - File path  : {self.models_path} \n"
             f"  - Pretrained : {self.pretrain} \n"
@@ -46,19 +44,18 @@ class TIMEBANDModel:
             config: Dataset configuration dict
                 `config['core'] & config['models']`
         """
-        logger.info("Timeband Model Setting")
         self.__dict__ = {**config, **self.__dict__}
 
     def initiate(self, dims: dict) -> None:
         if self.netD and self.netG:
             return
 
-        enc_dim, dec_dim = dims["encode"], dims["decode"]
+        enc_dim, dec_dim = dims["encode"], dims["decode"] # * self.forecast_len
         netD = NetD(dec_dim, self.hidden_dim, self.layers_num, self.device)
-        netG = NetG(enc_dim, dec_dim, self.hidden_dim, self.layers_num, self.device)
+        netG = NetG(enc_dim, dec_dim, self.observed_len, self.forecast_len, self.hidden_dim, self.layers_num, self.device)
 
         self.netD, self.netG = netD.to(self.device), netG.to(self.device)
-        logger.info(f" - Initiated netD : {self.netD}, netG: {self.netG}", level=0)
+        self.logger.info(f" - Initiated netD : {self.netD}, netG: {self.netG}", level=0)
         self.save()
 
     def load(self, postfix: str = "") -> tuple((NetD, NetG)):
@@ -67,10 +64,10 @@ class TIMEBANDModel:
 
         if self.load_opt:
             if os.path.exists(netD_path) and os.path.exists(netG_path):
-                logger.info(f" - {postfix} Model Loading : {netD_path}, {netG_path}")
+                self.logger.info(f" - {postfix} Model Loading : {netD_path}, {netG_path}")
                 self.netD, self.netG = torch.load(netD_path), torch.load(netG_path)
             else:
-                logger.warn(f" - {postfix} Model Loading Fail")
+                self.logger.warn(f" - {postfix} Model Loading Fail")
                 self.load() if postfix != "" else None
 
         return self.netD, self.netG
@@ -96,7 +93,7 @@ class TIMEBANDModel:
                 torch.save(self.netD, netD_path)
                 torch.save(self.netG, netG_path)
 
-            logger.info(f"*** {postfix} MODEL IS SAVED ***")
+            self.logger.info(f"*** {postfix} MODEL IS SAVED ***")
 
     def get_path(self, target: str, postfix: str = "") -> os.path:
         filename = target if postfix == "" else f"{target}_{postfix}"

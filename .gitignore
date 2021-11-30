@@ -145,3 +145,4 @@ __pycache__
 
 # Pyre type checker
 .pyre/
+data/*

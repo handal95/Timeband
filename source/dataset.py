@@ -1,4 +1,5 @@
 import os
+from pandas.core.frame import DataFrame
 import torch
 import numpy as np
 import pandas as pd
@@ -19,11 +20,9 @@ class TIMEBANDDataset:
         """
         TIMEBAND Dataset
 
-        Args:
+        params:
             config: Dataset configuration dict
         """
-        global logger
-        logger = config["logger"]
 
         # Set Config
         self.set_config(config)
@@ -35,7 +34,7 @@ class TIMEBANDDataset:
         self.data = self.load_dataset()
 
         # Information
-        logger.info(
+        self.logger.info(
             f"\n  Dataset: \n"
             f"  - Config    : {config} \n"
             f"  - Time Idx  : {self.time_index} \n"
@@ -55,7 +54,6 @@ class TIMEBANDDataset:
         """
 
         # Data file configuration
-        logger.info("Timeband Dataset Setting")
         self.__dict__ = {**config, **self.__dict__}
         self.basepath = os.path.join(self.directory, self.data_name)
 
@@ -70,41 +68,49 @@ class TIMEBANDDataset:
         Prepare data and labels for train/analysis
 
         """
+
         ##################
         # Data Preparing #
         ##################
-        if not os.path.exists(self.datapath) or self.reset is True:
+        if not os.path.exists(self.datapath):
             # Read csv data
             csv_path = os.path.join(self.directory, f"{self.data_name}.csv")
             data = pd.read_csv(csv_path, parse_dates=[self.time_index])
             data.drop(self.drops, axis=1, inplace=True)
 
             # Time indexing
-            data = self.expand_data(data)
             data = fill_timegap(data, self.time_index) if self.fill_timegap else data
+            data = self.expand_data(data)
 
             data.set_index(self.time_index, inplace=True)
             data.sort_index(ascending=True, inplace=True)
+
             data = self.parse_timeinfo(data)
 
-            self.set_minmax_info(data)
+            self.minmax_info(data)
             data.to_csv(self.datapath)
 
-            logger.info(f"  Data has been saved to {self.datapath}")
+            self.logger.info(f"  Data has been saved to {self.datapath}")
 
-        if not os.path.exists(self.missing_path) or self.reset is True:
+        if not os.path.exists(self.missing_path):
             # Missing values Labeling
             missing_label = data.isna().astype(int)
             missing_label.to_csv(self.missing_path)
-            logger.info(f"  Missing Label has been saved to {self.missing_path}")
+            self.logger.info(f"  Missing Label has been saved to {self.missing_path}")
 
-        if not os.path.exists(self.anomaly_path) or self.reset is True:
+        if not os.path.exists(self.anomaly_path):
             # Anomalies Labeling
             anomaly_label = pd.DataFrame(
                 np.zeros(data.shape), columns=data.columns, index=data.index
             )
             anomaly_label.to_csv(self.anomaly_path)
-            logger.info(f"  Anomaly Label has been saved to {self.anomaly_path}")
+            self.logger.info(f"  Anomaly Label has been saved to {self.anomaly_path}")
+
+    def interpolate(self, data: pd.DataFrame) -> pd.DataFrame:
+        data.interpolate(method="ffill", inplace=True)
+        data.interpolate(method="bfill", inplace=True)
+        data.replace(np.nan, 0, inplace=True)
+        return data
 
     def load_dataset(self, datapath: str = None) -> pd.DataFrame:
         """
@@ -116,9 +122,7 @@ class TIMEBANDDataset:
         datapath = self.datapath if datapath is None else datapath
         data = pd.read_csv(datapath, parse_dates=[self.time_index])
         data.set_index(self.time_index, inplace=True)
-        data.interpolate(method="ffill", inplace=True)
-        data.to_csv(os.path.join(self.basepath, "interpolated.csv"))
-        data.replace(np.nan, 0, inplace=True)
+        data = self.interpolate(data)
 
         # Observed Data & Forecast Data
         observed = data[self.targets][: self.observed_len + self.forecast_len - 1]
@@ -134,8 +138,8 @@ class TIMEBANDDataset:
 
         # Data Processing
         # Min-Max Scaling : 2 * (x - x.min) / (x.max - x.min) - 1
-        minmax_info = pd.read_csv(self.minmax_path, index_col="Features")
-        data = self.normalize(data, minmax_info)
+        minmax = self.minmax_info(data)
+        data = self.normalize(data, minmax)
         data.to_csv(self.normalized_path)
 
         # Data information
@@ -169,12 +173,13 @@ class TIMEBANDDataset:
             dataset = Dataset(encoded, decoded)
 
             # Unsplited data shape info
-            logger.info(f" - Data shape : {dataset.shape()}")
+            self.logger.info(f" - Data shape : {dataset.shape()}")
             return dataset
 
         # Splited dataset
+        split_rate = self.split_rate
         valid_minlen = int((self.min_valid_scale) * self.forecast_len)
-        valid_idx = min(int(data_len * self.split_rate), data_len - valid_minlen)
+        valid_idx = min(int(data_len * split_rate), data_len - valid_minlen)
         split_idx = valid_idx - self.forecast_len - self.observed_len
 
         # Dataset Preparing
@@ -183,13 +188,9 @@ class TIMEBANDDataset:
         self.trainset = trainset
 
         # Feature info
-        logger.info(
-            f"  - Split Rate : T {self.split_rate:.3f} V {1 - self.split_rate:.3f}"
-        )
-        logger.info(f"  - Data shape : T {trainset.shape()}, V {validset.shape()}")
-        logger.info(
-            f"  - Data shape : T {trainset.shape('decode')}, V {validset.shape('decode')}"
-        )
+        self.logger.info(f"- Split Rate : T {split_rate:.3f} V {1 - split_rate:.3f}")
+        self.logger.info(f"- Train shape: T {trainset.shape()},  {trainset.shape('decode')}")
+        self.logger.info(f"- Valid shape: T {validset.shape()}, {validset.shape('decode')}")
 
         return trainset, validset
 
@@ -199,16 +200,14 @@ class TIMEBANDDataset:
 
         """
 
-        observed = []
-        forecast = []
-
         y = x[self.targets]
+
+        observed, forecast = [], []
         for i in range(self.observed_len, stop + 1, self.stride):
             observed.append(x[i - self.observed_len : i])
             forecast.append(y[i : i + self.forecast_len])
 
-        observed = np.array(observed)
-        forecast = np.array(forecast)
+        observed, forecast = np.array(observed), np.array(forecast)
 
         return observed, forecast
 
@@ -216,13 +215,12 @@ class TIMEBANDDataset:
         """Normalize input in [-1,1] range, saving statics for denormalization"""
         # 2 * (x - x.min) / (x.max - x.min) - 1
 
-        encode_min = minmax["min"]
-        encode_max = minmax["max"]
+        data_min, data_max = minmax["min"],  minmax["max"]
 
-        data = 2 * ((data - encode_min) / (encode_max - encode_min)) - 1
+        data = 2 * ((data - data_min) / (data_max - data_min)) - 1
 
-        self.decode_min = torch.tensor(encode_min[self.targets])
-        self.decode_max = torch.tensor(encode_max[self.targets])
+        self.decode_min = torch.tensor(data_min[self.targets])
+        self.decode_max = torch.tensor(data_max[self.targets])
 
         return data
 
@@ -246,7 +244,7 @@ class TIMEBANDDataset:
         Get Random data in trainset for `critic`
 
         """
-        rand_scope = self.trainset.length - self.forecast_len
+        rand_scope = len(self.trainset) - self.forecast_len
         idx = np.random.randint(rand_scope)
 
         data = self.trainset[idx : idx + self.forecast_len]
@@ -260,7 +258,6 @@ class TIMEBANDDataset:
     # Init preprocessed methods
     ###############
     def expand_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """"""
         (data_len, encode_dim) = data.shape
         expand_data = pd.DataFrame(
             np.zeros((self.forecast_len, encode_dim)),
@@ -295,7 +292,7 @@ class TIMEBANDDataset:
 
         return data
 
-    def set_minmax_info(self, data: pd.DataFrame) -> None:
+    def minmax_info(self, data: pd.DataFrame) -> None:
         """
         Set Min-Max information for data scaling
 
@@ -304,15 +301,19 @@ class TIMEBANDDataset:
         # the min-max value of the data to be actually received afterward is unknown
         # So, using min/max information only 90% of dataset
         # and give a small margin was set based on the observed values.
-        split_idx = int(len(data) * 0.9)
-        min_val = data[:split_idx].min() * 0.95
-        max_val = data[:split_idx].max() * 1.05
+
+        split_idx = int(len(data) * self.split_rate)
+        min_val = data[:split_idx].min()
+        max_val = data[:split_idx].max()
+
+        min_val[min_val == -np.inf] = max_val
+        max_val[min_val == max_val] = max_val + 1
 
         minmax_df = pd.DataFrame([data.columns, min_val, max_val]).T
-        minmax_df.columns = ["Features", "min", "max"]
-        minmax_df.to_csv(self.minmax_path, index=False)
 
-        logger.info(
+        self.logger.info(
             f"Min Max info\n{tabulate(minmax_df, headers='keys', floatfmt='.2f')}",
             level=0,
         )
+
+        return {"min": min_val, "max": max_val}
