@@ -189,8 +189,12 @@ class TIMEBANDDataset:
 
         # Feature info
         self.logger.info(f"- Split Rate : T {split_rate:.3f} V {1 - split_rate:.3f}")
-        self.logger.info(f"- Train shape: T {trainset.shape()},  {trainset.shape('decode')}")
-        self.logger.info(f"- Valid shape: T {validset.shape()}, {validset.shape('decode')}")
+        self.logger.info(
+            f"- Train shape: T {trainset.shape()},  {trainset.shape('decode')}"
+        )
+        self.logger.info(
+            f"- Valid shape: T {validset.shape()}, {validset.shape('decode')}"
+        )
 
         return trainset, validset
 
@@ -215,7 +219,7 @@ class TIMEBANDDataset:
         """Normalize input in [-1,1] range, saving statics for denormalization"""
         # 2 * (x - x.min) / (x.max - x.min) - 1
 
-        data_min, data_max = minmax["min"],  minmax["max"]
+        data_min, data_max = minmax["min"], minmax["max"]
 
         data = 2 * ((data - data_min) / (data_max - data_min)) - 1
 

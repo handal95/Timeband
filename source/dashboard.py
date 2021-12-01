@@ -113,7 +113,9 @@ class TIMEBANDDashboard:
                 ax.axvline(FRCST - 1, color="black")
 
                 ax.axvspan(PIVOT, OBSRV - 1, alpha=0.1, label="Observed Window")
-                ax.axvspan(OBSRV - 1, FRCST - 1, alpha=0.1, color="r", label="Forecast Window")
+                ax.axvspan(
+                    OBSRV - 1, FRCST - 1, alpha=0.1, color="r", label="Forecast Window"
+                )
 
                 for col in range(idx_s, idx_e):
                     feature_label = self.visual_cols[col]

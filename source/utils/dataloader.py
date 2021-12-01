@@ -8,7 +8,7 @@ class BasicDataset(data.Dataset):
 
         self.x = x_tensor
         self.y = y_tensor
-        
+
     def __getitem__(self, index):
         return self.x[index], self.y[index]
 

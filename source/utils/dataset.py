@@ -7,7 +7,7 @@ class Dataset(data.Dataset):
         super(Dataset, self).__init__()
         self.encoded = encoded
         self.decoded = decoded
-        
+
     def shape(self, target="encode"):
         return self.encoded.shape if target == "encode" else self.decoded.shape
 

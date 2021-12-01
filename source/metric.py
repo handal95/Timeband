@@ -37,7 +37,7 @@ class TIMEBANDMetric:
 
         self.nme += nme_score
         return nme_score
-    
+
     def NMAE(self, true: tensor, pred: tensor, mask: tensor):
         true, pred = self._masking(true, pred, mask)
         true, pred = self._ignore_zero(true, pred)

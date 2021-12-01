@@ -50,9 +50,17 @@ class TIMEBANDModel:
         if self.netD and self.netG:
             return
 
-        enc_dim, dec_dim = dims["encode"], dims["decode"] # * self.forecast_len
+        enc_dim, dec_dim = dims["encode"], dims["decode"]  # * self.forecast_len
         netD = NetD(dec_dim, self.hidden_dim, self.layers_num, self.device)
-        netG = NetG(enc_dim, dec_dim, self.observed_len, self.forecast_len, self.hidden_dim, self.layers_num, self.device)
+        netG = NetG(
+            enc_dim,
+            dec_dim,
+            self.observed_len,
+            self.forecast_len,
+            self.hidden_dim,
+            self.layers_num,
+            self.device,
+        )
 
         self.netD, self.netG = netD.to(self.device), netG.to(self.device)
         self.logger.info(f" - Initiated netD : {self.netD}, netG: {self.netG}", level=0)
@@ -64,7 +72,9 @@ class TIMEBANDModel:
 
         if self.load_opt:
             if os.path.exists(netD_path) and os.path.exists(netG_path):
-                self.logger.info(f" - {postfix} Model Loading : {netD_path}, {netG_path}")
+                self.logger.info(
+                    f" - {postfix} Model Loading : {netD_path}, {netG_path}"
+                )
                 self.netD, self.netG = torch.load(netD_path), torch.load(netG_path)
             else:
                 self.logger.warn(f" - {postfix} Model Loading Fail")

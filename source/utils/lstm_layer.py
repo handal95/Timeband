@@ -15,7 +15,16 @@ class LSTMGenerator(nn.Module):
     Output: sequence of shape (batch_size, seq_len, out_dim)
     """
 
-    def __init__(self, in_dim, out_dim, inseq_len, outseq_len, hidden_dim=256, n_layers=1, device=None):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        inseq_len,
+        outseq_len,
+        hidden_dim=256,
+        n_layers=1,
+        device=None,
+    ):
         super().__init__()
         self.device = device
         self.n_layers = n_layers
@@ -23,7 +32,7 @@ class LSTMGenerator(nn.Module):
         self.out_dim = out_dim
         self.inseq_len = inseq_len
         self.outseq_len = outseq_len
-        
+
         h0_dim = hidden_dim // 4
         h1_dim = hidden_dim // 2
         h2_dim = hidden_dim
@@ -46,8 +55,12 @@ class LSTMGenerator(nn.Module):
         recurrent_features, _ = self.lstm2(recurrent_features)
 
         outputs = recurrent_features
-        outputs = self.seq_layer(outputs.contiguous().view(batch_size, self.hidden_dim, self.inseq_len))
-        outputs = self.dim_layer(outputs.contiguous().view(batch_size, self.outseq_len, self.hidden_dim))
+        outputs = self.seq_layer(
+            outputs.contiguous().view(batch_size, self.hidden_dim, self.inseq_len)
+        )
+        outputs = self.dim_layer(
+            outputs.contiguous().view(batch_size, self.outseq_len, self.hidden_dim)
+        )
 
         return outputs.to(self.device)
 

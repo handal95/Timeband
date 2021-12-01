@@ -97,7 +97,6 @@ class TIMEBANDTrainer:
         def generate(x):
             return self.models.netG(x).to(self.device)
 
-
         losses = self.losses.init_loss()
         score = self.metric.init_score()
 
