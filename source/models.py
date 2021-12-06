@@ -44,13 +44,15 @@ class LSTMGenerator(nn.Module):
         self.lstm0 = nn.LSTM(in_dim, h0_dim, n_layers, batch_first=True).to(self.device)
         self.lstm1 = nn.LSTM(h0_dim, h1_dim, n_layers, batch_first=True).to(self.device)
         self.lstm2 = nn.LSTM(h1_dim, h2_dim, n_layers, batch_first=True).to(self.device)
-        
+
         self.lstm0.flatten_parameters()
         self.lstm1.flatten_parameters()
         self.lstm2.flatten_parameters()
 
         self.seq_layer = nn.Sequential(nn.Linear(in_seq, out_seq)).to(self.device)
-        self.dim_layer = nn.Sequential(nn.Linear(h2_dim, out_dim), nn.Tanh()).to(self.device)
+        self.dim_layer = nn.Sequential(nn.Linear(h2_dim, out_dim), nn.Tanh()).to(
+            self.device
+        )
 
     def forward(self, input):
         h0_dim = self.hidden_dim // 4
@@ -86,9 +88,7 @@ class LSTMDiscriminator(nn.Module):
     Output: sequence of shape (batch_size, seq_len, 1)
     """
 
-    def __init__(
-        self, in_seq, in_dim, out_dim, out_seq, hid_dim=256, n_layers=1
-    ):
+    def __init__(self, in_seq, in_dim, out_dim, out_seq, hid_dim=256, n_layers=1):
         super().__init__()
         self.device = init_device()
         self.n_layers = n_layers
@@ -147,7 +147,7 @@ class TimebandModel(TimebandBase):
             in_seq=self.forecast_len,
             hid_dim=self.hidden_dim,
             out_dim=1,
-            out_seq=self.forecast_len
+            out_seq=self.forecast_len,
         )
         self.netG = LSTMGenerator(
             in_dim=self.encode_dim,

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from source.utils.initiate import init_device
+from .utils.initiate import init_device
 
 
 class GANLoss(nn.Module):
@@ -123,7 +123,9 @@ class TimebandLoss:
         gradient_sqr = torch.square(true - pred).to(self.device)
         gradient_sqr_sum = torch.sum(gradient_sqr).to(self.device)
         gradient_l2_norm = torch.sqrt(gradient_sqr_sum).to(self.device)
-        gradient_penalty = torch.square(1 - gradient_l2_norm).to(self.device) / true.size(0)
+        gradient_penalty = torch.square(1 - gradient_l2_norm).to(
+            self.device
+        ) / true.size(0)
         return gradient_penalty
 
     def loss(self, i: int = 0):

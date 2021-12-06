@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch import tensor
 
-from source.utils.initiate import init_device
+from .utils.initiate import init_device
 
 
 class TIMEBANDMetric:
@@ -20,7 +20,7 @@ class TIMEBANDMetric:
         true = torch.tensor(true.values).to(self.device)
         pred = torch.tensor(pred).to(self.device)
         mask = torch.tensor(mask.values).to(self.device)
-        
+
         nmae = self.NMAE(true, pred, mask)
         rmse = self.RMSE(true, pred, mask)
         nme = self.NME(true, pred, mask)

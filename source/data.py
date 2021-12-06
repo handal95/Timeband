@@ -5,7 +5,7 @@ import torch
 import torch.utils.data as data
 from typing import List, Tuple, Union, Optional
 
-from source.utils.initiate import init_device
+from .utils.initiate import init_device
 from .utils.time import fill_timegap
 
 
@@ -45,7 +45,7 @@ class TIMEBANDData:
         forecast_len: int,
     ) -> None:
         super(TIMEBANDData, self).__init__()
-        self.device = init_device() 
+        self.device = init_device()
 
         # Basic Configuration
         self.basedir = basedir
@@ -122,10 +122,10 @@ class TIMEBANDData:
         data.interpolate(method="ffill", inplace=True)
         data.interpolate(method="bfill", inplace=True)
         data.replace(np.nan, 0, inplace=True)
-        
+
         print(data.head(30))
         input()
-        
+
         data = self.parse_timeinfo(data)
         data = self.normalize(data)
 
@@ -150,7 +150,9 @@ class TIMEBANDData:
         if type(self.split_size) is float:
             split_index = int(len(data) * self.split_size)
 
-        split_index = min(split_index, len(data) - self.observed_len - self.forecast_len)
+        split_index = min(
+            split_index, len(data) - self.observed_len - self.forecast_len
+        )
         print(f"Split index is {split_index} / {len(data)} ({self.split_size}) ")
 
         trainset = MyDataset(encoded[:split_index], decoded[:split_index])
@@ -205,7 +207,9 @@ class TIMEBANDData:
 
         self.decode_min = torch.tensor(data_min[self.targets]).to(self.device)
         self.decode_max = torch.tensor(data_max[self.targets]).to(self.device)
-        self.delta = torch.tensor(data_max[self.targets] - data_min[self.targets]).to(self.device)
+        self.delta = torch.tensor(data_max[self.targets] - data_min[self.targets]).to(
+            self.device
+        )
 
         return data
 

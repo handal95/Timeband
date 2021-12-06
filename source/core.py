@@ -43,9 +43,9 @@ class Timeband:
             l1_weights=l1_weights, l2_weights=l2_weights, gp_weights=gp_weights
         )
         import os
-        
-        d = pd.read_csv(os.path.join(self.datadir,"origin", f"{self.filename}.csv"))
-        d.drop(columns=['Date', 'KOSPI', 'KOSDAQ'], inplace=True)
+
+        d = pd.read_csv(os.path.join(self.datadir, "origin", f"{self.filename}.csv"))
+        d.drop(columns=["Date", "KOSPI", "KOSDAQ"], inplace=True)
         self.Data = TIMEBANDData(
             basedir=self.datadir,
             filename=self.filename,
@@ -111,7 +111,7 @@ class Timeband:
             true_x, true_y = data
             true_x = true_x.to(self.device)
             true_y = true_y.to(self.device)
-            
+
             fake_y = self.Model.generate(true_x)
 
             Dy = self.Model.discriminate(true_y)
