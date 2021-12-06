@@ -1,99 +1,147 @@
+import os
 import pickle
-from re import sub
 import pandas as pd
-from source.args import CLIParser
 from source.core import Timeband
-from source.utils.initiate import seeding, load_config, setting_path
-from source.data import TIMEBANDData
-from tqdm import tqdm
 from torch.utils.data import DataLoader
+from source.utils.initiate import seeding
 
 seeding(seed=42)
 
 
+def get_path(dirname: str, filename: str, postfix: str = "") -> os.path:
+    filename = filename if postfix == "" else f"{filename}_{postfix}"
+    filepath = os.path.join(dirname, f"{filename}.dat")
+    return filepath
+
+
+def load_core(core_path):
+    with open(core_path, "rb") as f:
+        core = pickle.load(f)
+
+    print(f"Load Core from '{core_path}'")
+    print(f"Total Epochs {core.epochs}, {core.best_score}")
+    return core
+
+
+def save_core(core, core_path, best: bool = False):
+    if best:
+        print(f"Best Model is Saved at {core_path}")
+
+    with open(core_path, mode="wb") as f:
+        pickle.dump(core, f)
+
+
 def main():
+    """
+    0. Core 불러오기
 
     """
-    0. Data 전처리
+    FILE_NAME = "all"
+    MODEL_PATH = os.path.join("models", FILE_NAME)
+    OBSERVED_LEN = 10
+    FORECAST_LEN = 5
+    os.mkdir(MODEL_PATH) if not os.path.exists(MODEL_PATH) else None
+
+    try:
+        CORE_PATH = get_path(MODEL_PATH, "core", postfix="best")
+        Core = load_core(CORE_PATH)
+    except:
+        Core = Timeband(
+            datadir="data/",
+            filename=FILE_NAME,
+            observed_len=OBSERVED_LEN,
+            forecast_len=FORECAST_LEN,
+            l1_weights=1,
+            l2_weights=1,
+            gp_weights=1,
+        )
 
     """
-    OBSERVED_LENGTH = 5
-    FORECAST_LENGTH = 5
-    Data = TIMEBANDData(
-        basedir="data/",
-        filename="067160",
-        targets=["Close"],
-        drops=["Change"],
-        fill_timegap=False,
-        time_index=["Date"],
-        time_encode=["year", "month", "weekday", "day"],
-        split_size=0.8,
-        observed_len=OBSERVED_LENGTH,
-        forecast_len=FORECAST_LENGTH,
-    )
-
-    data = Data.init_dataset(index_s=0, index_e=None, force=True)
-    trainset, validset = Data.prepare_dataset(data, split=True)
-
-    input("Step 1 >> Input Enter")
-    """
-    1. 모델 생성로직
+    1. 모델 학습
 
     """
-    # Setting Configuration
-    config = load_config(config_path="model.cfg")
-    config = CLIParser(config).config
-    config = setting_path(config)
+    STEPS = 1
+    EPOCHS = 3000
+    CRITICS = 5
+    train_score_plot = []
+    valid_score_plot = []
+    Core.Data.split_size = 1.0
+    dataset = Core.Data.init_dataset(index_s=0, index_e=None)
+    Core.init_optimizer(lr_D=2e-4, lr_G=2e-4)
 
-    # Model initiating
-    model = Timeband(config)
-    dataloader = DataLoader(trainset, batch_size=1)
-    for epoch in range(10):
-        for i, data in tqdm(dataloader, desc=f"Epoch {epoch:3d}"):
-            x = data
+    for step in range(STEPS):
+        index_e = None if step + 1 == STEPS else -step
+        trainset, validset = Core.Data.prepare_trainset(dataset[:index_e])
 
-    input("Step 2 >> Input Enter")
-    """
-    2. 모델 학습로직
-    
-    """
-    # DATA
+        trainloader = DataLoader(trainset, batch_size=256)
+        validloader = DataLoader(validset, batch_size=1)
 
-    CORE_PATH = "models/sample.pkl"
-    if config["train_mode"]:
-        model.fit()
+        for epoch in range(EPOCHS):
+            Core.idx = Core.observed_len
+            Core.critic(trainset, CRITICS)
 
-    input("Step 3 >> Input Enter")
+            # Train Step
+            train_score = Core.train_step(trainloader, training=True)
+            train_score_plot.append(train_score)
+
+            # Valid Step
+            valid_score = Core.train_step(validloader)
+            valid_score_plot.append(valid_score)
+
+            Core.epochs += 1
+            update = True # train_score - valid_score < train_score * 0.5
+            if update and Core.is_best(valid_score):
+                save_core(Core, get_path(MODEL_PATH, "core", f"{valid_score:.3f}"))
+                save_core(Core, get_path(MODEL_PATH, "core", "best"), best=True)
+
+        if Core.is_best(valid_score):
+            save_core(Core, get_path(MODEL_PATH, "core", f"{valid_score:.3f}"))
+            save_core(Core, get_path(MODEL_PATH, "core", "best"), best=True)
+
     """
     3. 모델 예측
     
     """
+    try:
+        CORE_PATH = get_path(MODEL_PATH, "core", postfix="best")
+        Core = load_core(CORE_PATH)
+    except:
+        Core = Timeband(
+            datadir="data/",
+            filename=FILE_NAME,
+            observed_len=OBSERVED_LEN,
+            forecast_len=FORECAST_LEN,
+            l1_weights=1,
+            l2_weights=1,
+            gp_weights=1,
+        )
 
-    if config["clean_mode"]:
-        line, band = model.predicts()
+    subdata = pd.read_csv(F"data/target/{FILE_NAME}.csv", parse_dates=["Date"])
+    subdata = subdata.iloc[-OBSERVED_LEN - FORECAST_LEN:]
+    dataset = Core.Data.prepare_predset(subdata)
+    dataloader = DataLoader(dataset)
 
-    """
-    4. 배치 예측
-    
-    """
-    Data = TIMEBANDData(
-        basedir="data/",
-        filename="067160",
-        targets=["Close"],
-        drops=["Change"],
-        fill_timegap=False,
-        time_index=["Date"],
-        time_encode=["year", "month", "weekday", "day"],
-        split_size=0.8,
-        observed_len=OBSERVED_LENGTH,
-        forecast_len=FORECAST_LENGTH,
-    )
-    subdata = pd.read_csv("data/origin/067160.csv", parse_dates=["Date"])
-    subdata.set_index(["Date"], inplace=True)
-    subdata = subdata.iloc[-15:]
+    # # Preds Step
+    outputs, bands = Core.predict(dataloader)
+    print(outputs)
+    print(bands)
+    # _tqdm = tqdm(dataloader)
+    # Model.pred_initiate()
+    # Metric.init_score()
 
-    dataset = Data.prepare_dataset(subdata, split=False)
-    print(dataset.shape())
+    # outputs = None
+    # for i, data in enumerate(_tqdm):
+    #     # ##########
+    #     # Predicts
+    #     # ##########
+    #     fake_y = Model.generate(true_x)
+    #     pred_y = Data.denormalize(fake_y)
+    #     preds, lower, upper = Model.predicts(pred_y)
+
+    #     if outputs is None:
+    #         outputs = preds
+    #     else:
+    #         outputs = np.concatenate([outputs, preds])
 
 
 if __name__ == "__main__":
