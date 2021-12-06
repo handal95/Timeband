@@ -1,6 +1,21 @@
 # Timeband Release Notes
 ## **TIMEBAND 2.0** 
 Forecasting on **multivariable** Time Series data
+---
+### November 11, 2021 / v2.3
+- Stable Implementation of 3 main processes(Train / Clean / Preds)
+
+#### New Features
+- `TIMEBANDRunner` is splited Data cleansing and predicting process
+  (*Temporarily split for feature addition and refactoring)
+
+- Dataset path and output directory path are merged.
+- Processed Data during model execution are saved in file format
+- Separation of data setting(`init_dataset`) and data loading(`load_dataset`)
+
+#### Removed
+- No more cutoffs option for min-max regularization
+- zero imputation is no longer provided within TIMEBAND
 
 ---
 ### November 4, 2021 / v2.2.1

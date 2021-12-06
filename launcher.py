@@ -1,143 +1,148 @@
 import os
-import json
-import torch
-import random
-import numpy as np
+import pickle
 import pandas as pd
+from source.core import Timeband
+from torch.utils.data import DataLoader
+from source.utils.initiate import seeding
 
-from utils.args import Parser
-from utils.logger import Logger
-from TIMEBAND.core import TIMEBANDCore
-
-
-def seeding(seed=31):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-
-    torch.set_printoptions(precision=3, sci_mode=False)
-    pd.set_option("mode.chained_assignment", None)
-    pd.options.display.float_format = "{:.3f}".format
-    np.set_printoptions(linewidth=np.inf, precision=3, suppress=True)
+seeding(seed=42)
 
 
-def load_config(config_path: str = "config.json"):
-    with open(config_path, encoding="utf-8") as f:
-        config = json.load(f)
-    config = Parser(config).config
-
-    return config
+def get_path(dirname: str, filename: str, postfix: str = "") -> os.path:
+    filename = filename if postfix == "" else f"{filename}_{postfix}"
+    filepath = os.path.join(dirname, f"{filename}.pkl")
+    return filepath
 
 
-def save_config(config, config_path: str = "config.json"):
-    config_path = os.path.join(config["core"]["path"], config_path)
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False)
+def load_core(core_path):
+    with open(core_path, "rb") as f:
+        core = pickle.load(f)
+
+    print(f"Load Core from '{core_path}'")
+    print(f"Total Epochs {core.epochs}, {core.best_score}")
+    return core
 
 
-def setting_path(config: dict) -> dict:
+def save_core(core, core_path, best: bool = False):
+    if best:
+        print(f"Best Model is Saved at {core_path}")
+
+    with open(core_path, mode="wb") as f:
+        pickle.dump(core, f)
+
+
+def main():
     """
-    { OUTPUT_ROOT } / { DATA NAME } / { TAG }
-        - models : trained model path
-        - labels : missing / anomaly label path
-        - data   : processed data path
-        - logs   : log files path
-    """
-
-    ROOT_DIR = config["core"]["directory"]
-    DATA_NAME = config["core"]["data_name"]
-    MODEL_TAG = config["core"]["TAG"]
-
-    output_path = os.path.join(ROOT_DIR, DATA_NAME)
-    models_path = os.path.join(output_path, MODEL_TAG)
-    os.mkdir(ROOT_DIR) if not os.path.exists(ROOT_DIR) else None
-    os.mkdir(output_path) if not os.path.exists(output_path) else None
-
-    config["core"]["path"] = models_path
-    config["core"]["models_path"] = os.path.join(models_path, "models")
-    config["core"]["logs_path"] = os.path.join(models_path, "logs")
-
-    if not os.path.exists(models_path):
-        os.mkdir(models_path)
-        os.mkdir(config["core"]["models_path"])
-        os.mkdir(config["core"]["logs_path"])
-
-    return config
-
-
-def init_device():
-    """
-    Setting device CUDNN option
+    0. Core 불러오기
 
     """
-    # TODO : Using parallel GPUs options
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    FILE_NAME = "all"
+    MODEL_PATH = os.path.join("models", FILE_NAME)
+    OBSERVED_LEN = 10
+    FORECAST_LEN = 5
+    os.mkdir(MODEL_PATH) if not os.path.exists(MODEL_PATH) else None
 
-    return torch.device(device)
-
-
-def launcher():
-    """
-    Timeband model commend Launcher
-    1. Please Check config.json for default config setting
-    2. Prepare your timeseries data in 'data/' ( .csv format )
-
-    """
-
-    config = load_config()
-
-    SEED = config.get("seed", 31)
-
-    config = setting_path(config)
-    save_config(config)
-
-    TAG = config["core"]["TAG"]
-
-    logger = Logger(config["core"]["logs_path"], config["core"]["verbosity"])
-    config["core"]["logger"] = logger
-    config["core"]["device"] = init_device()
-
-    logger.info("**********************")
-    logger.info("***** TIME  BAND *****")
-    logger.info("**********************")
-    logger.info("** System   Setting **")
-    logger.info(f"  Random Seed : {SEED}")
-    logger.info(f"  MODELS TAG  : {TAG} ")
-    logger.info(f"  OUTPUT DIR  : {config['core']['path']} ")
-    logger.info(f"  VERBOSITY   : {config['core']['verbosity']} ")
-
-    logger.info("** TIMEBAND Setting **")
-    core = TIMEBANDCore(config=config)
-
-    # Run Model Trainning
     try:
-        if config["train_mode"]:
-            logger.info("*********************")
-            logger.info("** Model  Training **")
-            logger.info("*********************")
+        CORE_PATH = get_path(MODEL_PATH, "core", postfix="best")
+        Core = load_core(CORE_PATH)
+    except:
+        Core = Timeband(
+            datadir="data/",
+            filename=FILE_NAME,
+            observed_len=OBSERVED_LEN,
+            forecast_len=FORECAST_LEN,
+            l1_weights=1,
+            l2_weights=1,
+            gp_weights=1,
+        )
 
-            core.train()
+    """
+    1. 모델 학습
 
-        if config["clean_mode"]:
-            logger.info("*********************")
-            logger.info("**   Cleansing     **")
-            logger.info("*********************")
+    """
+    STEPS = 1
+    EPOCHS = 3000
+    CRITICS = 5
+    train_score_plot = []
+    valid_score_plot = []
+    Core.Data.split_size = 1.0
+    dataset = Core.Data.init_dataset(index_s=0, index_e=None)
+    Core.init_optimizer(lr_D=2e-4, lr_G=2e-4)
 
-            core.clean()
+    for step in range(STEPS):
+        index_e = None if step + 1 == STEPS else -step
+        trainset, validset = Core.Data.prepare_trainset(dataset[:index_e])
 
-        if config["preds_mode"]:
-            logger.info("*********************")
-            logger.info("**   Predicting    **")
-            logger.info("*********************")
+        trainloader = DataLoader(trainset, batch_size=256)
+        validloader = DataLoader(validset, batch_size=1)
 
-            core.predict()
+        for epoch in range(EPOCHS):
+            Core.idx = Core.observed_len
+            Core.critic(trainset, CRITICS)
 
-    except KeyboardInterrupt:
-        print("Abort!")
-            
+            # Train Step
+            train_score = Core.train_step(trainloader, training=True)
+            train_score_plot.append(train_score)
+
+            # Valid Step
+            valid_score = Core.train_step(validloader)
+            valid_score_plot.append(valid_score)
+
+            Core.epochs += 1
+            update = True # train_score - valid_score < train_score * 0.5
+            if update and Core.is_best(valid_score):
+                save_core(Core, get_path(MODEL_PATH, "core", f"{valid_score:.3f}"))
+                save_core(Core, get_path(MODEL_PATH, "core", "best"), best=True)
+
+        if Core.is_best(valid_score):
+            save_core(Core, get_path(MODEL_PATH, "core", f"{valid_score:.3f}"))
+            save_core(Core, get_path(MODEL_PATH, "core", "best"), best=True)
+
+    """
+    3. 모델 예측
+    
+    """
+    try:
+        CORE_PATH = get_path(MODEL_PATH, "core", postfix="best")
+        Core = load_core(CORE_PATH)
+    except:
+        Core = Timeband(
+            datadir="data/",
+            filename=FILE_NAME,
+            observed_len=OBSERVED_LEN,
+            forecast_len=FORECAST_LEN,
+            l1_weights=1,
+            l2_weights=1,
+            gp_weights=1,
+        )
+
+    subdata = pd.read_csv(F"data/target/{FILE_NAME}.csv", parse_dates=["Date"])
+    subdata = subdata.iloc[-OBSERVED_LEN - FORECAST_LEN:]
+    dataset = Core.Data.prepare_predset(subdata)
+    dataloader = DataLoader(dataset)
+
+    # # Preds Step
+    outputs, bands = Core.predict(dataloader)
+    print(outputs)
+    print(bands)
+    # _tqdm = tqdm(dataloader)
+    # Model.pred_initiate()
+    # Metric.init_score()
+
+    # outputs = None
+    # for i, data in enumerate(_tqdm):
+    #     # ##########
+    #     # Predicts
+    #     # ##########
+    #     fake_y = Model.generate(true_x)
+    #     pred_y = Data.denormalize(fake_y)
+    #     preds, lower, upper = Model.predicts(pred_y)
+
+    #     if outputs is None:
+    #         outputs = preds
+    #     else:
+    #         outputs = np.concatenate([outputs, preds])
+
 
 if __name__ == "__main__":
-    launcher()
+    main()

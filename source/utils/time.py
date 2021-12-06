@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 
 def parsing(data: pd.DataFrame, config: dict, dt: pd.Series, name: str):
@@ -11,11 +12,14 @@ def parsing(data: pd.DataFrame, config: dict, dt: pd.Series, name: str):
 
 
 def fill_timegap(data: pd.DataFrame, time_index: str):
+    # data[time_index] = pd.to_datetime(data[time_index])
     TIMEGAP = data[time_index][1] - data[time_index][0]
 
     data_len = len(data)
-    for i in range(1, data_len):
-        if data[time_index][i] - data[time_index][i - 1] != TIMEGAP:
+    _tqdm = tqdm(range(1, data_len))
+
+    for i in _tqdm:
+        if (data[time_index][i] - data[time_index][i - 1]) != TIMEGAP:
             gap_start = data[time_index][i - 1]
             gap_end = data[time_index][i] - TIMEGAP
 
