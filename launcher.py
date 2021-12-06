@@ -8,7 +8,6 @@ from .source.utils.initiate import seeding
 
 seeding(seed=42)
 
-
 def get_path(dirname: str, filename: str, postfix: str = "") -> os.path:
     filename = filename if postfix == "" else f"{filename}_{postfix}"
     filepath = os.path.join(dirname, f"{filename}.pkl")
@@ -126,24 +125,6 @@ def main():
     outputs, bands = Core.predict(dataloader)
     print(outputs)
     print(bands)
-    # _tqdm = tqdm(dataloader)
-    # Model.pred_initiate()
-    # Metric.init_score()
-
-    # outputs = None
-    # for i, data in enumerate(_tqdm):
-    #     # ##########
-    #     # Predicts
-    #     # ##########
-    #     fake_y = Model.generate(true_x)
-    #     pred_y = Data.denormalize(fake_y)
-    #     preds, lower, upper = Model.predicts(pred_y)
-
-    #     if outputs is None:
-    #         outputs = preds
-    #     else:
-    #         outputs = np.concatenate([outputs, preds])
-
 
 if __name__ == "__main__":
     main()

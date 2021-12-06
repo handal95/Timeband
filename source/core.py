@@ -4,13 +4,6 @@ import pandas as pd
 from .utils.logger import Logger
 from .utils.initiate import init_device
 
-from tqdm import tqdm
-from source.data import TIMEBANDData
-from source.models import TimebandModel
-from source.metrics import TIMEBANDMetric
-from source.losses import TimebandLoss
-from torch.optim import RMSprop, Adam
-
 
 class Timeband:
     VERSION = "Timeband v2.3.0"
