@@ -10,7 +10,7 @@ seeding(seed=42)
 
 def get_path(dirname: str, filename: str, postfix: str = "") -> os.path:
     filename = filename if postfix == "" else f"{filename}_{postfix}"
-    filepath = os.path.join(dirname, f"{filename}.dat")
+    filepath = os.path.join(dirname, f"{filename}.pkl")
     return filepath
 
 

@@ -145,4 +145,8 @@ __pycache__
 
 # Pyre type checker
 .pyre/
+
+# Timeband data and model files
 data/*
+models/*
+.dummy/*
