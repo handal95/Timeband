@@ -1,81 +1,85 @@
 import os
+import enum
 import pytz
 import structlog
 import datetime
 import logging.config
 
 KST = pytz.timezone("Asia/Seoul")
-timestamper = structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False)
-pre_chain = [structlog.stdlib.add_log_level, timestamper]
+LOG_FORMAT = structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False)
+pre_chain = [structlog.stdlib.add_log_level, LOG_FORMAT]
 
 today = datetime.datetime.today()
 
 
+class VerbosityEnum(enum.Enum):
+    TRACE = 0
+    DEBUG = 1
+    INFO = 2
+    ERROR = 3
+    WARN = 4
+    OFF = 5
+
 class Logger:
     # Logger verbosity level
-    DETAIL = 0
-    NORMAL = 1
-    IMPORT = 2
-
-    def __init__(self, logpath: str, verbosity: int):
+    def __init__(self, logfile: str, verbosity: int = VerbosityEnum.DEBUG):
         # Set log file path
-        self.logpath = logpath
+        self.logfile = logfile
         self.verbosity = verbosity
 
-        self.init_config()
-        self.logger = logging.getLogger()
-
-    def init_config(self):
-        logtime = (today).strftime("%y%m%d_%H%M")
-        logfile = os.path.join(self.logpath, f"{logtime}.log")
-        logging.config.dictConfig(
-            {
-                "version": 1,
-                "disable_existing_loggers": True,
-                "formatters": {
-                    "plain": {
-                        "()": structlog.stdlib.ProcessorFormatter,
-                        "processor": structlog.dev.ConsoleRenderer(colors=False),
-                        "foreign_pre_chain": pre_chain,
-                    },
-                    "colored": {
-                        "()": structlog.stdlib.ProcessorFormatter,
-                        "processor": structlog.dev.ConsoleRenderer(colors=True),
-                        "foreign_pre_chain": pre_chain,
-                    },
+        self.setup_logger()
+        self.logger = logging.getLogger(__name__)
+        self.logger.propagate = True
+        
+    def setup_logger(self):
+        _LOG_DICT = {
+            "version": 1,
+            "disable_existing_loggers": True,
+            "formatters": {
+                "plain": {
+                    "()": structlog.stdlib.ProcessorFormatter,
+                    "processor": structlog.dev.ConsoleRenderer(colors=False),
+                    "foreign_pre_chain": pre_chain,
                 },
-                "handlers": {
-                    "default": {
-                        "level": "DEBUG",
-                        "class": "logging.StreamHandler",
-                        "formatter": "colored",
-                    },
-                    "file": {
-                        "level": "INFO",
-                        "class": "logging.handlers.RotatingFileHandler",
-                        "filename": logfile,
-                        "formatter": "plain",
-                        "backupCount": 20,
-                    },
+                "colored": {
+                    "()": structlog.stdlib.ProcessorFormatter,
+                    "processor": structlog.dev.ConsoleRenderer(colors=True),
+                    "foreign_pre_chain": pre_chain,
                 },
-                "loggers": {
-                    "": {
-                        "handlers": ["default", "file"],
-                        "level": "INFO",
-                        "propagate": True,
-                    }
+            },
+            "handlers": {
+                "default": {
+                    "level": "DEBUG",
+                    "class": "logging.StreamHandler",
+                    "formatter": "colored"
                 },
+            },
+            "loggers": {
+                "": {
+                    "handlers": ["default"],
+                    "level": "DEBUG",
+                }
+            },
+        }
+        
+        if hasattr(self, "filepath"):
+            _LOG_DICT["loggers"][""]["handlers"].append("file")
+            _LOG_DICT["handlers"]["file"] = {
+                "level": "INFO",
+                "class": "logging.handlers.RotatingFileHandler",
+                "filename": f"{self.logfile}.log",
+                "formatter": "plain",
+                "maxBytes": 1024,
+                "backupCount": 3
             }
-        )
+        
+        logging.config.dictConfig(_LOG_DICT)
 
-    def debug(self, message: str, level: int = NORMAL):
-        if level >= self.verbosity:
-            return self.logger.debug(message)
+    def debug(self, message: str):
+        return self.logger.debug(message)
 
-    def info(self, message: str, level: int = NORMAL):
-        if level >= self.verbosity:
-            return self.logger.info(message)
+    def info(self, message: str):
+        return self.logger.info(message)
 
-    def warn(self, message: str, level: int = NORMAL):
-        if level >= self.verbosity:
-            return self.logger.warning(message)
+    def warn(self, message: str):
+        return self.logger.warning(message)

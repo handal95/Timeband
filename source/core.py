@@ -1,12 +1,23 @@
 import numpy as np
 import pandas as pd
 
-from .utils.logger import Logger
-from .utils.initiate import init_device
+from tqdm import tqdm
+from torch.optim import RMSprop, Adam
+
+from data import TimeData
+from model import TimeModel
+from metrics import TimebandMetric
+from losses import TimebandLoss
+
+from utils.color import colorstr
+from utils.logger import Logger
+from utils.initiate import init_device
+
+from typing import List
 
 
 class Timeband:
-    VERSION = "Timeband v2.3.0"
+    VERSION = "Timeband v2.4.0"
 
     def __init__(
         self,
@@ -14,6 +25,8 @@ class Timeband:
         filename: str,
         observed_len: int,
         forecast_len: int,
+        targets: List[str],
+        time_index: str,
         l1_weights: int,
         l2_weights: int,
         gp_weights: int,
@@ -31,29 +44,24 @@ class Timeband:
         self.observed_len = observed_len
         self.forecast_len = forecast_len
 
-        self.Metric = TIMEBANDMetric()
+        self.Metric = TimebandMetric()
         self.Losses = TimebandLoss(
             l1_weights=l1_weights, l2_weights=l2_weights, gp_weights=gp_weights
         )
-        import os
-
-        d = pd.read_csv(os.path.join(self.datadir, "origin", f"{self.filename}.csv"))
-        d.drop(columns=["Date", "KOSPI", "KOSDAQ"], inplace=True)
-        self.Data = TIMEBANDData(
+        
+        self.Data = TimeData(
             basedir=self.datadir,
             filename=self.filename,
-            targets=d.columns,
+            targets=targets,
             drops=[],
-            fill_timegap=False,
-            time_index=["Date"],
-            time_encode=["year", "month", "weekday", "day"],
-            split_size=1.0,
+            fill_timegap=True,
+            time_index=[time_index],
+            time_encode=['weekday', 'hour'],
+            split_size=0.8,
             observed_len=self.observed_len,
             forecast_len=self.forecast_len,
         )
-        print(self.Data.encode_dims)
-        print(self.Data.decode_dims)
-        self.Model = TimebandModel(
+        self.Model = TimeModel(
             encode_dim=self.Data.encode_dims,
             decode_dim=self.Data.decode_dims,
             hidden_dim=256,
@@ -98,10 +106,11 @@ class Timeband:
             # ##########
             # Discriminator Training
             # ##########
-            if training:
-                self.optimD.zero_grad()
+            self.optimD.zero_grad()
 
             true_x, true_y = data
+            batchs = true_x.shape[0]
+            
             true_x = true_x.to(self.device)
             true_y = true_y.to(self.device)
 
@@ -118,8 +127,7 @@ class Timeband:
             # ##########
             # Generator Training
             # ##########
-            if training:
-                self.optimG.zero_grad()
+            self.optimG.zero_grad()
 
             fake_y = self.Model.generate(true_x)
             DGx = self.Model.discriminate(fake_y)
@@ -135,15 +143,17 @@ class Timeband:
             pred_y = self.Data.denormalize(fake_y)
             preds, lower, upper = self.Model.predicts(pred_y)
 
-            batchs, pred_len, target_dim = pred_y.shape
+            pred_len, target_dim = preds.shape
             reals = self.Data.forecast[self.idx : self.idx + pred_len]
             masks = self.Data.missing_decode[self.idx : self.idx + pred_len]
             self.Metric.scoring(reals, preds, masks)
 
             scores = self.Metric.score(i)
             process = "Train" if training else "Valid"
+            
+            SCORE = colorstr(scores['NMAE']) if not training else scores['NMAE']
             _tqdm.set_description(
-                f"{process} [Epoch {self.epochs:3d}] NMAE: {scores['NMAE']} RMSE: {scores['RMSE']} NME: {scores['NME']}"
+                f"{process} [Epoch {self.epochs:3d}] NMAE: {SCORE} RMSE: {scores['RMSE']} NME: {scores['NME']}"
             )
             self.idx = self.idx + batchs
 
@@ -182,10 +192,11 @@ class Timeband:
             axis=1,
         )
 
-        return outputs_df, bands_df
+        return outputs_df[-self.forecast_len:], bands_df[-self.forecast_len:]
 
     def is_best(self, score: float) -> bool:
         if score < self.best_score:
             self.best_score = score
             return True
         return False
+    

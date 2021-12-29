@@ -3,10 +3,12 @@ import pickle
 import pandas as pd
 from torch.utils.data import DataLoader
 
-from .source.core import Timeband
-from .source.utils.initiate import seeding
+from source.core import Timeband
+from source.utils.initiate import seeding
+from typing import List
 
-seeding(seed=42)
+# seeding(seed=42)
+
 
 def get_path(dirname: str, filename: str, postfix: str = "") -> os.path:
     filename = filename if postfix == "" else f"{filename}_{postfix}"
@@ -18,8 +20,6 @@ def load_core(core_path):
     with open(core_path, "rb") as f:
         core = pickle.load(f)
 
-    print(f"Load Core from '{core_path}'")
-    print(f"Total Epochs {core.epochs}, {core.best_score}")
     return core
 
 
@@ -31,24 +31,24 @@ def save_core(core, core_path, best: bool = False):
         pickle.dump(core, f)
 
 
-def main():
+def main(FILE_NAME: str, TARGETS: List[str]):
     """
     0. Core 불러오기
 
     """
-    FILE_NAME = "all"
-    MODEL_PATH = os.path.join("models", FILE_NAME)
-    OBSERVED_LEN = 10
-    FORECAST_LEN = 5
+    MODEL_PATH = "models/"
+    OBSERVED_LEN = 5
+    FORECAST_LEN = 3
     os.mkdir(MODEL_PATH) if not os.path.exists(MODEL_PATH) else None
 
     try:
-        CORE_PATH = get_path(MODEL_PATH, "core", postfix="best")
+        CORE_PATH = get_path(MODEL_PATH, FILE_NAME, postfix="best")
         Core = load_core(CORE_PATH)
-    except:
+    except FileNotFoundError:
         Core = Timeband(
             datadir="data/",
             filename=FILE_NAME,
+            targets=TARGETS,
             observed_len=OBSERVED_LEN,
             forecast_len=FORECAST_LEN,
             l1_weights=1,
@@ -61,7 +61,7 @@ def main():
 
     """
     STEPS = 1
-    EPOCHS = 3000
+    EPOCHS = 20
     CRITICS = 5
     train_score_plot = []
     valid_score_plot = []
@@ -91,40 +91,32 @@ def main():
             Core.epochs += 1
             update = True  # train_score - valid_score < train_score * 0.5
             if update and Core.is_best(valid_score):
-                save_core(Core, get_path(MODEL_PATH, "core", f"{valid_score:.3f}"))
-                save_core(Core, get_path(MODEL_PATH, "core", "best"), best=True)
+                save_core(Core, get_path(MODEL_PATH, FILE_NAME, postfix="best"), best=True)
 
         if Core.is_best(valid_score):
-            save_core(Core, get_path(MODEL_PATH, "core", f"{valid_score:.3f}"))
-            save_core(Core, get_path(MODEL_PATH, "core", "best"), best=True)
+            save_core(Core, get_path(MODEL_PATH, FILE_NAME, postfix="best"), best=True)
+
+
+def predict(FILE_NAME: str, TARGETS: List[str], data: pd.DataFrame):
+    """
+    모델 예측
 
     """
-    3. 모델 예측
-    
-    """
-    try:
-        CORE_PATH = get_path(MODEL_PATH, "core", postfix="best")
-        Core = load_core(CORE_PATH)
-    except:
-        Core = Timeband(
-            datadir="data/",
-            filename=FILE_NAME,
-            observed_len=OBSERVED_LEN,
-            forecast_len=FORECAST_LEN,
-            l1_weights=1,
-            l2_weights=1,
-            gp_weights=1,
-        )
+    MODEL_PATH = "models/"
+    os.mkdir(MODEL_PATH) if not os.path.exists(MODEL_PATH) else None
 
-    subdata = pd.read_csv(f"data/target/{FILE_NAME}.csv", parse_dates=["Date"])
-    subdata = subdata.iloc[-OBSERVED_LEN - FORECAST_LEN :]
-    dataset = Core.Data.prepare_predset(subdata)
+    CORE_PATH = get_path(MODEL_PATH, FILE_NAME, postfix="best")
+    Core = load_core(CORE_PATH)
+
+    dataset = Core.Data.prepare_predset(data)
+
     dataloader = DataLoader(dataset)
 
     # # Preds Step
     outputs, bands = Core.predict(dataloader)
-    print(outputs)
-    print(bands)
+
+    return outputs, bands
+
 
 if __name__ == "__main__":
-    main()
+    main("sample_input", ["aaaaaa_close", "bbbbbb_close", "cccccc_close", "dddddd_close", "eeeeee_close"])

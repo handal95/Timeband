@@ -5,9 +5,10 @@ import torch
 import torch.utils.data as data
 from typing import List, Tuple, Union, Optional
 
-from .utils.initiate import init_device
-from .utils.time import fill_timegap
-
+from utils.initiate import check_dirs_exist
+from utils.initiate import init_device
+from utils.time import fill_timegap
+from utils.color import colorstr
 
 class MyDataset(data.Dataset):
     def __init__(self, encoded, decoded):
@@ -16,7 +17,7 @@ class MyDataset(data.Dataset):
         self.decoded = decoded
 
         self.length = len(self.encoded)
-
+        
     def shape(self, target="encode"):
         return self.encoded.shape if target == "encode" else self.decoded.shape
 
@@ -30,7 +31,7 @@ class MyDataset(data.Dataset):
         return encoded, decoded
 
 
-class TIMEBANDData:
+class TimeData:
     def __init__(
         self,
         basedir: str,
@@ -38,13 +39,13 @@ class TIMEBANDData:
         targets: List[str],
         drops: List[str],
         fill_timegap: bool,
-        time_index: List[str],
+        time_index: str,
         time_encode: List[str],
         split_size: Union[int, float],
         observed_len: int,
         forecast_len: int,
     ) -> None:
-        super(TIMEBANDData, self).__init__()
+        super(TimeData, self).__init__()
         self.device = init_device()
 
         # Basic Configuration
@@ -60,27 +61,26 @@ class TIMEBANDData:
         self.forecast_len = forecast_len
 
         # Path setting
-        self.basepath = os.path.join(self.basedir, "origin")
-        self.datapath = os.path.join(self.basedir, "target")
-        self.metapath = os.path.join(self.basedir, "meta", filename)
-        os.mkdir(self.datapath) if not os.path.exists(self.datapath) else None
-        os.mkdir(self.metapath) if not os.path.exists(self.metapath) else None
+        self.datadir = os.path.join(self.basedir, "target")
+        self.metadir = os.path.join(self.datadir, filename)
+        check_dirs_exist(basepath=self.basedir, dirlist=["target"])
+        check_dirs_exist(basepath=self.datadir, dirlist=[filename])
 
-        self.origin_path = os.path.join(self.basepath, f"{filename}.csv")
-        self.target_path = os.path.join(self.datapath, f"{filename}.csv")
-        self.minmax_path = os.path.join(self.metapath, "minmax.csv")
-        self.missing_path = os.path.join(self.metapath, "missing.csv")
+        self.base_path = os.path.join(self.basedir, f"{filename}.csv")
+        self.data_path = os.path.join(self.metadir, f"{filename}.csv")
+        self.minmax_path = os.path.join(self.metadir, "minmax.csv")
+        self.missing_path = os.path.join(self.metadir, "missing.csv")
 
         # Dimension
         data = pd.read_csv(
-            self.origin_path,
+            self.base_path,
             parse_dates=self.time_index,
             index_col=self.time_index,
             nrows=1,
         )
         data = self.parse_timeinfo(data)
         data.drop(self.drops, axis=1, inplace=True)
-
+        
         self.encode_dims = len(data.columns)
         self.decode_dims = len(self.targets)
 
@@ -89,12 +89,15 @@ class TIMEBANDData:
         index_s: Optional[int] = 0,
         index_e: Optional[int] = None,
     ) -> pd.DataFrame:
-        data = pd.read_csv(self.origin_path, parse_dates=self.time_index)
-        data.drop(self.drops, axis=1, inplace=True)
-        data = data[index_s:index_e]
-
-        data = fill_timegap(data, self.time_index) if self.fill_timegap else data
-        data.to_csv(self.target_path, index=False)
+        if os.path.exists(self.data_path):
+            data = pd.read_csv(self.data_path, parse_dates=self.time_index)
+        else:
+            data = pd.read_csv(self.base_path, parse_dates=self.time_index)
+            data.drop(self.drops, axis=1, inplace=True)
+            data = data[index_s:index_e]
+            
+            data = fill_timegap(data, self.time_index) if self.fill_timegap else data
+            data.to_csv(self.data_path, index=False)
 
         _data = data.set_index(self.time_index)
         _data = self.parse_timeinfo(_data)
@@ -104,12 +107,14 @@ class TIMEBANDData:
         self.forecast = _data[self.targets]
 
         # Missing Label
-        missing_label = _data.isna().astype(int)
-        missing_label.to_csv(self.missing_path)
+        if not os.path.exists(self.missing_path):
+            missing_label = _data.isna().astype(int)
+            missing_label.to_csv(self.missing_path)
 
         # Minmax information
-        minmax_label = self.minmax_info(_data)
-        minmax_label.to_csv(self.minmax_path, index=False)
+        if not os.path.exists(self.minmax_path):
+            minmax_label = self.minmax_info(_data)
+            minmax_label.to_csv(self.minmax_path, index=False)
 
         return data
 
@@ -117,21 +122,24 @@ class TIMEBANDData:
         self, data: pd.DataFrame, stride: int = 1
     ) -> Union[pd.DataFrame, Tuple[pd.DataFrame, pd.DataFrame]]:
         # Dataset Preparing
-        data.set_index(self.time_index, inplace=True)
+        try:
+            data.set_index(self.time_index, inplace=True)
+        except:
+            pass
 
-        data.interpolate(method="ffill", inplace=True)
-        data.interpolate(method="bfill", inplace=True)
+        data = data.interpolate(method="ffill")
+        data = data.interpolate(method="bfill")
         data.replace(np.nan, 0, inplace=True)
-
-        print(data.head(30))
-        input()
-
+        
         data = self.parse_timeinfo(data)
         data = self.normalize(data)
 
-        missing_label = data.isna().astype(int)
+        with open(self.missing_path) as f:
+            missing_label = pd.read_csv(self.missing_path, index_col=self.time_index)
+
         self.missing_encode = missing_label
         self.missing_decode = missing_label[self.targets]
+        print(self.missing_decode)
 
         # Data Windowing
         x, y = data, data[self.targets]
@@ -153,14 +161,20 @@ class TIMEBANDData:
         split_index = min(
             split_index, len(data) - self.observed_len - self.forecast_len
         )
-        print(f"Split index is {split_index} / {len(data)} ({self.split_size}) ")
+        
+        train_size = split_index
+        valid_size = len(data) - split_index
+        print(f"Split index is {train_size} / {valid_size} ({self.split_size}) ")
 
         trainset = MyDataset(encoded[:split_index], decoded[:split_index])
         validset = MyDataset(encoded[split_index:], decoded[split_index:])
         return trainset, validset
 
     def prepare_predset(self, data: pd.DataFrame, stride: int = 1):
-        data.set_index(self.time_index, inplace=True)
+        try:
+            data.set_index(self.time_index, inplace=True)
+        except:
+            pass
         data = self.parse_timeinfo(data)
         data = self.normalize(data)
 

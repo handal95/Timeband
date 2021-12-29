@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .utils.initiate import init_device
+from utils.initiate import init_device
 
 
 class GANLoss(nn.Module):
