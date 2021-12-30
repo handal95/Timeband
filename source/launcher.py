@@ -4,6 +4,7 @@ TIMEBAND Launcher.
 """
 import os
 from core import Timeband
+from utils.initiate import seeding
 
 from utils.parser import ArgParser
 from utils.logger import Logger
@@ -12,6 +13,8 @@ from utils.files import get_path, load_core
 from typing import List
 from torch.utils.data import DataLoader
 from utils.files import save_core, get_path
+
+seeding()
 
 def launcher(data_file=None, time_index=None, targets=None):
     args = ArgParser(data_file).args
@@ -53,20 +56,20 @@ def launcher(data_file=None, time_index=None, targets=None):
         
     # Train option
     STEPS = 1
-    EPOCHS = 100
+    EPOCHS = 1
     CRITICS = 5
     train_score_plot = []
     valid_score_plot = []
-    Core.Data.split_size = 0.8
+    Core.Data.split_size = 0.9
     dataset = Core.Data.init_dataset(index_s=0, index_e=None)
-    Core.init_optimizer(lr_D=2e-4, lr_G=2e-4)
+    Core.init_optimizer(lr_D=5e-4, lr_G=5e-4)
 
     for step in range(STEPS):
         index_e = None if step + 1 == STEPS else -step
         trainset, validset = Core.Data.prepare_trainset(dataset[:index_e])
 
-        trainloader = DataLoader(trainset, batch_size=128)
-        validloader = DataLoader(validset, batch_size=128)
+        trainloader = DataLoader(trainset, batch_size=256)
+        validloader = DataLoader(validset, batch_size=256)
 
         for epoch in range(EPOCHS):
             Core.idx = Core.observed_len
@@ -92,20 +95,22 @@ def launcher(data_file=None, time_index=None, targets=None):
     모델 예측
 
     """
-    MODEL_PATH = "models/"
-    os.mkdir(MODEL_PATH) if not os.path.exists(MODEL_PATH) else None
-
+    logger.info("Prediction")
     core_path = get_path(args.model_dir, args.model_file, postfix="best")
     Core = load_core(core_path)
 
+    dataset = Core.Data.init_dataset(index_s=0, index_e=None)
     dataset = Core.Data.prepare_predset(dataset)
-    dataloader = DataLoader(dataset)
+    dataloader = DataLoader(dataset, batch_size=1)
 
     # # Preds Step
     outputs, bands = Core.predict(dataloader)
     
     print(type(outputs), outputs.shape)
     print(type(bands), bands.shape)
+    
+    outputs.to_csv("output.csv")
+    bands.to_csv("bands.csv")
 
     return outputs, bands
         
@@ -123,8 +128,9 @@ def detect_anomaly():
     pass
 
 if __name__ == "__main__":
-    launcher(data_file="AirQualityUCI-co", time_index="DateTime", targets=["CO(GT)"])
-            #  ,"NMHC(GT)","C6H6(GT)","NOx(GT)","NO2(GT)"])
+    launcher(data_file="AirQualityUCIv", time_index="DateTime", targets=[
+        "CO(GT)","PT08.S1(CO)","NMHC(GT)","C6H6(GT)","PT08.S2(NMHC)","NOx(GT)","PT08.S3(NOx)","NO2(GT)","PT08.S4(NO2)","PT08.S5(O3)","T","RH","AH"
+    ])
     # launcher(data_file="energydata_complete", time_index="date", targets=["Appliances"])
 
     

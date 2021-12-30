@@ -190,20 +190,20 @@ class TimeModel(TimebandBase):
             gamma = (forecast_len - f) / (forecast_len - 1)
             std[-f] += std[-f - 1] * gamma
 
-        lower = preds - 2 * std
-        upper = preds + 2 * std
+        lower = preds - 3 * std
+        upper = preds + 3 * std
 
         return preds, lower, upper
 
     def adjust(self, output, preds, masks, lower, upper):
         len = preds.shape[0]
-        a = self.missing_gamma
-        b = self.anomaly_gamma
+        a = 0.1
+        b = 0.1
 
         for p in range(len):
             value = output[p + 1]
 
-            mmask = masks[p]
+            mmask = masks.iloc[p]
             lmask = (value < lower[p]) * (1 - mmask)
             umask = (value > upper[p]) * (1 - mmask)
 

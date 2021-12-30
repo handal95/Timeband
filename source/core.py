@@ -36,7 +36,7 @@ class Timeband:
         self.logger = Logger("logs", 0)
 
         self.epochs = 0
-        self.best_score = 10.0
+        self.best_score = 10000.0
 
         self.datadir = datadir
         self.filename = filename
@@ -56,7 +56,7 @@ class Timeband:
             drops=[],
             fill_timegap=True,
             time_index=[time_index],
-            time_encode=['weekday', 'hour'],
+            time_encode=['month', 'weekday', 'hour'],
             split_size=0.8,
             observed_len=self.observed_len,
             forecast_len=self.forecast_len,
@@ -146,7 +146,12 @@ class Timeband:
             pred_len, target_dim = preds.shape
             reals = self.Data.forecast[self.idx : self.idx + pred_len]
             masks = self.Data.missing_decode[self.idx : self.idx + pred_len]
-            self.Metric.scoring(reals, preds, masks)
+            self.Metric.scoring(true=reals, pred=preds, mask=masks)
+            
+            # if not training:
+            #     print(reals)
+            #     print(preds)
+            #     input()
 
             scores = self.Metric.score(i)
             process = "Train" if training else "Valid"
@@ -163,22 +168,34 @@ class Timeband:
         self.Model.pred_initiate()
 
         _tqdm = tqdm(dataloader)
-        outputs = np.zeros((self.forecast_len, self.Data.decode_dims))
+        self.idx = self.observed_len
+        outputs = self.Data.forecast[:self.observed_len]
+
         lower_bands = outputs.copy()
         upper_bands = outputs.copy()
         for i, data in enumerate(_tqdm):
             true_x, true_y = data
             true_x = true_x.to(self.device)
+            batchs = true_x.shape[0]
 
             fake_y = self.Model.generate(true_x)
             pred_y = self.Data.denormalize(fake_y)
             preds, lower, upper = self.Model.predicts(pred_y)
 
+            pred_len, target_dim = preds.shape
+            reals = self.Data.forecast[self.idx : self.idx + pred_len]
+            masks = self.Data.missing_decode[self.idx : self.idx + pred_len]
+            
+            outputs = np.concatenate([outputs[:1 - self.forecast_len], reals], axis=0)
+            target = self.Model.adjust(outputs[-1-pred_len:], preds, masks, lower, upper)
+            outputs[-target.shape[0]:] = target
+
             _tqdm.set_description(f"Preds [Epoch {self.epochs:3d}]")
 
-            outputs = np.concatenate([outputs[: 1 - self.forecast_len], preds])
+            # outputs = np.concatenate([outputs[: 1 - self.forecast_len], preds])
             lower_bands = np.concatenate([lower_bands[: 1 - self.forecast_len], lower])
             upper_bands = np.concatenate([upper_bands[: 1 - self.forecast_len], upper])
+            self.idx = self.idx + batchs
 
         lower_cols = [f"{x}_lower" for x in self.Data.targets]
         upper_cols = [f"{x}_upper" for x in self.Data.targets]
@@ -192,7 +209,7 @@ class Timeband:
             axis=1,
         )
 
-        return outputs_df[-self.forecast_len:], bands_df[-self.forecast_len:]
+        return outputs_df, bands_df
 
     def is_best(self, score: float) -> bool:
         if score < self.best_score:

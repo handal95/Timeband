@@ -2,38 +2,33 @@ import torch
 import torch.nn as nn
 from torch import tensor
 
-from utils.initiate import init_device
 
+class TIMEBANDMetric:
+    def __init__(self, config: dict) -> None:
+        self.set_config(config)
 
-class TimebandMetric:
-    def __init__(self) -> None:
-        self.device = init_device()
-        self.mse = nn.MSELoss()
-        self.esp = 1e-4
+        self.mse = nn.MSELoss().to(self.device)
+        self.esp = 1e-7
+        self.init_score()
+
+    def set_config(self, config: dict):
+        """
+        Configure settings related to the data set.
+
+        params:
+            config: Dataset configuration dict
+                `config['core'] & config['dataset']`
+        """
+        self.__dict__ = {**config, **self.__dict__}
 
     def init_score(self):
         self.nme = 0
         self.nmae = 0
         self.rmse = 0
-        
-        self.ignored = 0
+        return self.score()
 
-    def scoring(self, true: tensor, pred: tensor, mask: tensor):
-        true = torch.tensor(true.values).to(self.device)
-        pred = torch.tensor(pred).to(self.device)
-        mask = torch.tensor(mask.values).to(self.device)
+    def NME(self, true: tensor, pred: tensor, mask: tensor):
         true, pred = self._masking(true, pred, mask)
-
-        if true.shape[0] == 0:
-            self.ignored += 1
-            return 0, 0, 0
-
-        nmae = self.NMAE(true, pred)
-        rmse = self.RMSE(true, pred)
-        nme = self.NME(true, pred)
-        return nmae, rmse, nme
-
-    def NME(self, true: tensor, pred: tensor):
         true, pred = self._ignore_zero(true, pred)
 
         normalized_error = (true - pred) / (self.esp + true)
@@ -43,7 +38,8 @@ class TimebandMetric:
         self.nme += nme_score
         return nme_score
 
-    def NMAE(self, true: tensor, pred: tensor):
+    def NMAE(self, true: tensor, pred: tensor, mask: tensor):
+        true, pred = self._masking(true, pred, mask)
         true, pred = self._ignore_zero(true, pred)
 
         normalized_error = (true - pred) / (self.esp + true)
@@ -54,7 +50,11 @@ class TimebandMetric:
         self.nmae += nmae_score
         return nmae_score
 
-    def RMSE(self, true: tensor, pred: tensor):
+    def RMSE(self, true: tensor, pred: tensor, mask: tensor):
+        true, pred = self._masking(true, pred, mask)
+        if self.zero_ignore:
+            true, pred = self._ignore_zero(true, pred)
+
         mean_squared_error = self.mse(true, pred)
         root_mean_squared_error = torch.sqrt(mean_squared_error).to(self.device)
         rmse_score = root_mean_squared_error.cpu().detach().numpy()
@@ -75,10 +75,9 @@ class TimebandMetric:
         return true, pred
 
     def score(self, i: int = 0):
-        index = (i + 1) - self.ignored
         score = {
-            "NME": f"{self.nme  / (index):6.3f}",
-            "NMAE": f"{self.nmae / (index):7.5f}",
-            "RMSE": f"{self.rmse / (index):6.3f}",
+            "NME": f"{self.nme  / (i + 1):6.3f}",
+            "NMAE": f"{self.nmae / (i + 1):7.5f}",
+            "RMSE": f"{self.rmse / (i + 1):6.2f}",
         }
         return score

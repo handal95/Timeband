@@ -146,7 +146,7 @@ def main():
     x_data = np.array(x_data)
     y_data = np.array(y_data)
 
-    split_size = 0.8
+    split_size = 0.9
     split_index = min(
         int(len(data) * split_size), len(data) - window_size - future_size
     )

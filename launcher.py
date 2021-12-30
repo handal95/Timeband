@@ -67,7 +67,7 @@ def main(FILE_NAME: str, TARGETS: List[str]):
     valid_score_plot = []
     Core.Data.split_size = 1.0
     dataset = Core.Data.init_dataset(index_s=0, index_e=None)
-    Core.init_optimizer(lr_D=2e-4, lr_G=2e-4)
+    Core.init_optimizer(lr_D=1, lr_G=1)
 
     for step in range(STEPS):
         index_e = None if step + 1 == STEPS else -step

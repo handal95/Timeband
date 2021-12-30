@@ -101,6 +101,9 @@ class TimeData:
 
         _data = data.set_index(self.time_index)
         _data = self.parse_timeinfo(_data)
+        data = data.interpolate(method="ffill")
+        data = data.interpolate(method="bfill")
+        data.to_csv(self.data_path, index=False)
 
         # Dimension
         self.observed = _data
@@ -139,7 +142,6 @@ class TimeData:
 
         self.missing_encode = missing_label
         self.missing_decode = missing_label[self.targets]
-        print(self.missing_decode)
 
         # Data Windowing
         x, y = data, data[self.targets]
@@ -182,13 +184,17 @@ class TimeData:
         self.missing_encode = missing_label
         self.missing_decode = missing_label[self.targets]
 
-        x = data
-        observed = []
-        for i in range(self.observed_len, len(data), stride):
-            observed.append(x[i - self.observed_len : i])
-        encoded = np.array(observed)
+        x, y = data, data[self.targets]
 
-        predset = MyDataset(encoded, encoded)
+        observed, forecast = [], []
+        stop = len(data) - self.forecast_len + 1
+        for i in range(self.observed_len, stop, stride):
+            observed.append(x[i - self.observed_len : i])
+            forecast.append(y[i : i + self.forecast_len])
+
+        encoded, decoded = np.array(observed), np.array(forecast)
+        
+        predset = MyDataset(encoded, decoded)
         return predset
 
     def minmax_info(self, data: pd.DataFrame) -> None:

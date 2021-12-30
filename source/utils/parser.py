@@ -39,9 +39,9 @@ class ArgParser:
         parser.add_argument("-lr", "--learning_rate", type=float, help="Learning rate")
 
         parser.add_argument("-T", "--targets", type=list, help="Target columns for prediction")
-        parser.add_argument("-l1", "--l1_weight", type=int, help="Weight for L1 loss", default=2e-3)
-        parser.add_argument("-l2", "--l2_weight", type=int, help="Weight for L2 loss", default=2e-3)
-        parser.add_argument("-gp", "--gp_weight", type=int, help="Weight for gradients penalty", default=2e-4)
+        parser.add_argument("-l1", "--l1_weight", type=int, help="Weight for L1 loss", default=1)
+        parser.add_argument("-l2", "--l2_weight", type=int, help="Weight for L2 loss", default=1)
+        parser.add_argument("-gp", "--gp_weight", type=int, help="Weight for gradients penalty", default=1)
         
         # Dataset option
         parser.add_argument("-ti", "--time_index", type=str, help="Timestamps index column")
